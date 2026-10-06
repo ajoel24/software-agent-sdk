@@ -113,6 +113,9 @@ FROM python:3.13-bookworm AS builder
 ARG USERNAME UID GID ENABLE_VERTEX
 ENV UV_PROJECT_ENVIRONMENT=/agent-server/.venv
 ENV UV_PYTHON_INSTALL_DIR=/agent-server/uv-managed-python
+# Hardlinks never survive podman cache mounts (different filesystems);
+# copy mode is what happens anyway — this just silences the warning.
+ENV UV_LINK_MODE=copy
 
 # uv 0.11.5+ embeds python-build-standalone 20260408 metadata, which is the
 # first release with the PT_GNU_STACK fix. Pin to 0.12.15 (latest eligible at time of
@@ -132,6 +135,7 @@ COPY --chown=${USERNAME}:${USERNAME} openhands-tools ./openhands-tools
 COPY --chown=${USERNAME}:${USERNAME} openhands-workspace ./openhands-workspace
 COPY --chown=${USERNAME}:${USERNAME} openhands-agent-server ./openhands-agent-server
 RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
+    --mount=type=cache,target=/agent-server/uv-managed-python,uid=${UID},gid=${GID} \
     EXTRA_FLAGS=""; \
     if [ "$ENABLE_VERTEX" = "1" ]; then EXTRA_FLAGS="--extra vertex"; fi; \
     uv python install 3.13 && \
@@ -148,11 +152,13 @@ ARG USERNAME UID GID ENABLE_VERTEX
 
 # We need --dev for pyinstaller
 RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
+    --mount=type=cache,target=/agent-server/uv-managed-python,uid=${UID},gid=${GID} \
     EXTRA_FLAGS=""; \
     if [ "$ENABLE_VERTEX" = "1" ]; then EXTRA_FLAGS="--extra vertex"; fi; \
     uv sync --frozen --dev --no-editable --extra boto3 $EXTRA_FLAGS
 
 RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
+    --mount=type=cache,target=/agent-server/uv-managed-python,uid=${UID},gid=${GID} \
     uv run pyinstaller openhands-agent-server/openhands/agent_server/agent-server.spec
 # Fail fast if the expected binary is missing
 RUN test -x /agent-server/dist/openhands-agent-server
@@ -566,12 +572,12 @@ EXPOSE ${PORT}
 # Local dev and debugging mode: copy source + venv from builder
 ############################
 FROM base-image AS source
-ARG USERNAME
+ARG USERNAME INSTALL_TELEGRAM
 COPY --chown=${USERNAME}:${USERNAME} --from=builder /agent-server /agent-server
 ENTRYPOINT ["tini", "--", "/agent-server/.venv/bin/python", "-m", "openhands.agent_server"]
 
 FROM base-image-minimal AS source-minimal
-ARG USERNAME
+ARG USERNAME INSTALL_TELEGRAM
 COPY --chown=${USERNAME}:${USERNAME} --from=builder /agent-server /agent-server
 ENTRYPOINT ["tini", "--", "/agent-server/.venv/bin/python", "-m", "openhands.agent_server"]
 
