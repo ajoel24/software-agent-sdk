@@ -50,6 +50,11 @@ class TelegramStartRequest(BaseModel):
         default="/workspace",
         description="Default workspace for Telegram-triggered conversations",
     )
+    agent_profile_name: str | None = Field(
+        default=None,
+        description="Agent profile for Telegram conversations. "
+        "Defaults to the server's default profile.",
+    )
 
 
 class TelegramWebhookResponse(BaseModel):
@@ -81,6 +86,8 @@ def _config_from_env_or_store(request: Request) -> TelegramConfig | None:
         or list(prefs.get("allowed_usernames") or []),
         default_workspace=os.environ.get("TELEGRAM_DEFAULT_WORKSPACE")
         or str(prefs.get("default_workspace") or "/workspace"),
+        agent_profile_name=os.environ.get("TELEGRAM_AGENT_PROFILE")
+        or str(prefs.get("agent_profile_name") or "default"),
     )
 
 
@@ -166,6 +173,9 @@ async def telegram_start(
                 if u.strip()
             ],
             default_workspace=req.default_workspace,
+            agent_profile_name=req.agent_profile_name
+            or os.environ.get("TELEGRAM_AGENT_PROFILE")
+            or "default",
         )
     else:
         config = _config_from_env_or_store(request)
