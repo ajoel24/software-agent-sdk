@@ -82,6 +82,7 @@ from openhands.agent_server.server_details_router import (
 from openhands.agent_server.settings_router import settings_router
 from openhands.agent_server.skills_router import skills_router
 from openhands.agent_server.sub_agents_router import sub_agents_router
+from openhands.agent_server.telegram_router import telegram_router
 from openhands.agent_server.telemetry import (
     build_telemetry_sink,
     emit_server_started,
@@ -473,6 +474,7 @@ def _add_api_routes(app: FastAPI) -> None:
     # so it lives under the header-only auth group.
     api_router.include_router(auth_router)
     app.include_router(openai_router, dependencies=[Depends(check_openai_api_key)])
+    app.include_router(telegram_router)
 
     # Workspace static-file routes get their own auth group that accepts
     # EITHER the X-Session-API-Key header OR the workspace session cookie.
