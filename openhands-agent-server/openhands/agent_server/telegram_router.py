@@ -16,6 +16,8 @@ from openhands.agent_server.telegram_service import (
     TelegramConfig,
     _get_telegram_service,
     _set_telegram_service,
+    load_telegram_config,
+    save_telegram_config,
 )
 from openhands.sdk.logger import get_logger
 
@@ -52,14 +54,34 @@ class TelegramWebhookResponse(BaseModel):
     ok: bool = True
 
 
+def _config_from_env_or_file() -> TelegramConfig | None:
+    """Bot config from env, falling back to the persisted file."""
+    token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    if token:
+        return TelegramConfig(
+            bot_token=token,
+            webhook_url=os.environ.get("TELEGRAM_WEBHOOK_URL"),
+            webhook_secret=os.environ.get("TELEGRAM_WEBHOOK_SECRET"),
+            allowed_usernames=[
+                u.strip().lstrip("@")
+                for u in os.environ.get("TELEGRAM_ALLOWED_USERNAMES", "").split(",")
+                if u.strip()
+            ],
+            default_workspace=os.environ.get(
+                "TELEGRAM_DEFAULT_WORKSPACE", "/workspace"
+            ),
+        )
+    return load_telegram_config()
+
+
 def _get_or_create_telegram_service(
     conversation_service: ConversationService = Depends(get_conversation_service),
 ) -> TelegramBotService:
     service = _get_telegram_service()
     if service is not None:
         return service
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    if not token:
+    config = _config_from_env_or_file()
+    if config is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
@@ -67,17 +89,6 @@ def _get_or_create_telegram_service(
                 "Set TELEGRAM_BOT_TOKEN or POST /telegram/start"
             ),
         )
-    config = TelegramConfig(
-        bot_token=token,
-        webhook_url=os.environ.get("TELEGRAM_WEBHOOK_URL"),
-        webhook_secret=os.environ.get("TELEGRAM_WEBHOOK_SECRET"),
-        allowed_usernames=[
-            u.strip().lstrip("@")
-            for u in os.environ.get("TELEGRAM_ALLOWED_USERNAMES", "").split(",")
-            if u.strip()
-        ],
-        default_workspace=os.environ.get("TELEGRAM_DEFAULT_WORKSPACE", "/workspace"),
-    )
     service = TelegramBotService(config, conversation_service)
     _set_telegram_service(service)
     return service
@@ -127,27 +138,34 @@ async def telegram_start(
     if existing and existing.is_running():
         return {"status": "already_running", **existing.get_status()}
 
-    token = req.bot_token or os.environ.get("TELEGRAM_BOT_TOKEN")
-    if not token:
+    token = (req.bot_token or os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    if token:
+        config = TelegramConfig(
+            bot_token=token,
+            webhook_url=req.webhook_url or os.environ.get("TELEGRAM_WEBHOOK_URL"),
+            webhook_secret=os.environ.get("TELEGRAM_WEBHOOK_SECRET"),
+            allowed_usernames=req.allowed_usernames
+            or [
+                u.strip().lstrip("@")
+                for u in os.environ.get("TELEGRAM_ALLOWED_USERNAMES", "").split(",")
+                if u.strip()
+            ],
+            default_workspace=req.default_workspace,
+        )
+    else:
+        config = load_telegram_config()
+    if config is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="bot_token is required (or set TELEGRAM_BOT_TOKEN)",
         )
-    config = TelegramConfig(
-        bot_token=token,
-        webhook_url=req.webhook_url or os.environ.get("TELEGRAM_WEBHOOK_URL"),
-        webhook_secret=os.environ.get("TELEGRAM_WEBHOOK_SECRET"),
-        allowed_usernames=req.allowed_usernames
-        or [
-            u.strip().lstrip("@")
-            for u in os.environ.get("TELEGRAM_ALLOWED_USERNAMES", "").split(",")
-            if u.strip()
-        ],
-        default_workspace=req.default_workspace,
-    )
     service = TelegramBotService(config, conversation_service)
     _set_telegram_service(service)
     await service.start()
+    try:
+        save_telegram_config(config)
+    except OSError as exc:
+        logger.warning(f"Could not persist Telegram config: {exc}")
     return {"status": "started", **service.get_status()}
 
 

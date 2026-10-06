@@ -7,10 +7,13 @@ conversations, and streams agent responses back to Telegram users.
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -359,6 +362,53 @@ class TelegramBotService:
         if user is None:
             return False
         return user.username in self.config.allowed_usernames
+
+
+def _telegram_config_path() -> Path:
+    """Location of the persisted bot config (secret file, mode 600)."""
+    override = os.environ.get("TELEGRAM_CONFIG_FILE")
+    if override:
+        return Path(override)
+    return Path.home() / ".openhands" / "telegram.json"
+
+
+def save_telegram_config(config: TelegramConfig) -> None:
+    """Persist the running bot config so restarts don't need re-entry."""
+    path = _telegram_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "bot_token": config.bot_token,
+        "webhook_url": config.webhook_url,
+        "webhook_secret": config.webhook_secret,
+        "allowed_usernames": config.allowed_usernames,
+        "default_workspace": config.default_workspace,
+    }
+    path.write_text(json.dumps(payload, indent=2))
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        logger.warning(f"Could not set permissions on {path}")
+
+
+def load_telegram_config() -> TelegramConfig | None:
+    """Load a previously persisted bot config, if any."""
+    path = _telegram_config_path()
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    token = str(data.get("bot_token") or "").strip()
+    if not token:
+        return None
+    return TelegramConfig(
+        bot_token=token,
+        webhook_url=data.get("webhook_url"),
+        webhook_secret=data.get("webhook_secret"),
+        allowed_usernames=list(data.get("allowed_usernames") or []),
+        default_workspace=str(data.get("default_workspace") or "/workspace"),
+    )
 
 
 _telegram_service: TelegramBotService | None = None
