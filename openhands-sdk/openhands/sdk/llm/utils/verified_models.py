@@ -80,6 +80,27 @@ VERIFIED_GLM_MODELS = [
     "glm-5.2",
 ]
 
+# Muse Spark 1.3 and 1.2, each with its contributor variant.
+VERIFIED_META_MODELS = [
+    "muse-spark-1.3",
+    "muse-spark-1.3-contributor",
+    "muse-spark-1.2",
+    "muse-spark-1.2-contributor",
+]
+
+# Zen frontier: GPT 6 trio, Claude Opus/Sonnet/Haiku, Muse Spark pair.
+# Model ids are the Zen id without the ``opencode/`` gateway prefix.
+VERIFIED_OPENCODE_MODELS = [
+    "gpt-6-astra",
+    "gpt-6-sol",
+    "gpt-6-luna",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-haiku-4-5",
+    "muse-spark-1.3",
+    "muse-spark-1.2",
+]
+
 # Nemotron 3.5 and 3.
 VERIFIED_NVIDIA_MODELS = [
     "nemotron-3.5-lightning-30b-a3b",
@@ -197,6 +218,8 @@ VERIFIED_MODELS = {
     "moonshot": VERIFIED_MOONSHOT_MODELS,
     "minimax": VERIFIED_MINIMAX_MODELS,
     "glm": VERIFIED_GLM_MODELS,
+    "meta": VERIFIED_META_MODELS,
+    "opencode": VERIFIED_OPENCODE_MODELS,
     "nvidia": VERIFIED_NVIDIA_MODELS,
     "qwen": VERIFIED_QWEN_MODELS,
     "openrouter": VERIFIED_OPENROUTER_MODELS,

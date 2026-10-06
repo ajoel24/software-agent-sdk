@@ -213,6 +213,17 @@ def test_verified_lists_keep_two_latest_versions_per_line():
             {"anthropic/claude-opus-5", "openai/gpt-6-astra"},
             {"anthropic/claude-opus-4-7"},
         ),
+        # Meta Muse Spark line: 1.3 and 1.2 kept, each with its contributor
+        # variant; 1.1 dropped as the oldest.
+        "meta": (
+            {"muse-spark-1.3", "muse-spark-1.2"},
+            {"muse-spark-1.1"},
+        ),
+        # Zen frontier across the GPT, Claude and Muse lines.
+        "opencode": (
+            {"gpt-6-astra", "claude-opus-5", "muse-spark-1.3"},
+            {"gpt-5.5", "claude-opus-4-8"},
+        ),
     }
     assert set(expectations) == set(VERIFIED_MODELS) - {"openhands"}
     for provider, (present, absent) in expectations.items():
