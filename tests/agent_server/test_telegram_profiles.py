@@ -84,6 +84,27 @@ async def test_new_with_named_profile(service):
 
 
 @pytest.mark.asyncio
+async def test_configured_name_missing_uses_single_available(
+    tmp_path, monkeypatch
+):
+    solo_store = AgentProfileStore(base_dir=tmp_path / "solo2")
+    solo_store.save(OpenHandsAgentProfile(name="solo", llm_profile_ref="x"))
+    monkeypatch.setattr(
+        "openhands.agent_server.persistence.get_agent_profile_store",
+        lambda: solo_store,
+    )
+    tg._set_telegram_service(None)
+    svc = tg.TelegramBotService(
+        tg.TelegramConfig(bot_token="t", agent_profile_name="ghost"),
+        MagicMock(),
+    )
+    try:
+        assert svc._resolve_profile(None).name == "solo"
+    finally:
+        tg._set_telegram_service(None)
+
+
+@pytest.mark.asyncio
 async def test_new_unknown_profile_rejected(service):
     update = _update("/new nope")
     await service._cmd_new(update, MagicMock())
