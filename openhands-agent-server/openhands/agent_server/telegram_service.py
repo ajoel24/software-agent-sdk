@@ -246,8 +246,8 @@ class TelegramBotService:
     def _resolve_profile(self, profile_name: str | None):
         """Profile by name (or the configured default) from the store.
 
-        Falls back to the only available profile when `default` is
-        requested but doesn't exist.
+        Falls back to the only available profile when the requested name
+        doesn't exist, so a missing `default` never blocks chatting.
         """
         from openhands.agent_server.persistence import get_agent_profile_store
 
@@ -256,10 +256,9 @@ class TelegramBotService:
         try:
             return store.load(name)
         except FileNotFoundError:
-            if name == "default":
-                available = [p.removesuffix(".json") for p in store.list()]
-                if len(available) == 1:
-                    return store.load(available[0])
+            available = [p.removesuffix(".json") for p in store.list()]
+            if len(available) == 1:
+                return store.load(available[0])
             raise
 
     def _conversation_secrets(self, profile) -> dict[str, Any]:
