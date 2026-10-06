@@ -153,6 +153,7 @@ from openhands.sdk.llm.utils.image_resize import maybe_resize_messages_for_provi
 from openhands.sdk.llm.utils.litellm_provider import LLMProvider
 from openhands.sdk.llm.utils.metrics import Metrics
 from openhands.sdk.llm.utils.model_features import ModelFeatures, get_features
+from openhands.sdk.llm.utils.opencode_provider import zen_api_for
 from openhands.sdk.llm.utils.openhands_provider import (
     LiteLLMCallKwargs,
     canonicalize_openhands_llm_payload,
@@ -763,12 +764,21 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
 
         # OpenCode Zen gateway: default credentials from the environment.
         # The model keeps its canonical ``opencode/<id>`` form (translated
-        # to ``openai/<id>`` only at the LiteLLM call boundary); LiteLLM
-        # would otherwise look for OPENAI_API_KEY instead of OPENCODE_API_KEY.
-        if model_val.startswith("opencode/") and not d.get("api_key"):
-            env_key = os.environ.get("OPENCODE_API_KEY")
-            if env_key:
-                d["api_key"] = env_key
+        # to the LiteLLM-routable provider form only at the call boundary);
+        # LiteLLM would otherwise look for OPENAI_API_KEY instead of
+        # OPENCODE_API_KEY. Zen serves each model on exactly one protocol
+        # (see ``opencode_provider``): Responses-protocol models default to
+        # the SDK's Responses-API path unless explicitly overridden.
+        if model_val.startswith("opencode/"):
+            if not d.get("api_key"):
+                env_key = os.environ.get("OPENCODE_API_KEY")
+                if env_key:
+                    d["api_key"] = env_key
+            if zen_api_for(model_val) == "responses" and d.get("api_mode", "auto") in (
+                None,
+                "auto",
+            ):
+                d["api_mode"] = "responses"
 
         return d
 
