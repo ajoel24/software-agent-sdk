@@ -364,51 +364,37 @@ class TelegramBotService:
         return user.username in self.config.allowed_usernames
 
 
-def _telegram_config_path() -> Path:
-    """Location of the persisted bot config (secret file, mode 600)."""
+TELEGRAM_BOT_TOKEN_SECRET_NAME = "telegram_bot_token"
+TELEGRAM_WEBHOOK_SECRET_NAME = "telegram_webhook_secret"
+
+
+def _telegram_prefs_path() -> Path:
+    """Location of the non-secret bot prefs (never holds token material)."""
     override = os.environ.get("TELEGRAM_CONFIG_FILE")
     if override:
         return Path(override)
     return Path.home() / ".openhands" / "telegram.json"
 
 
-def save_telegram_config(config: TelegramConfig) -> None:
-    """Persist the running bot config so restarts don't need re-entry."""
-    path = _telegram_config_path()
+def save_telegram_prefs(config: TelegramConfig) -> None:
+    """Persist non-secret bot prefs. Secrets go to the SecretsStore."""
+    path = _telegram_prefs_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "bot_token": config.bot_token,
         "webhook_url": config.webhook_url,
-        "webhook_secret": config.webhook_secret,
         "allowed_usernames": config.allowed_usernames,
         "default_workspace": config.default_workspace,
     }
     path.write_text(json.dumps(payload, indent=2))
-    try:
-        os.chmod(path, 0o600)
-    except OSError:
-        logger.warning(f"Could not set permissions on {path}")
 
 
-def load_telegram_config() -> TelegramConfig | None:
-    """Load a previously persisted bot config, if any."""
-    path = _telegram_config_path()
+def load_telegram_prefs() -> dict[str, Any]:
+    """Load persisted non-secret bot prefs, if any."""
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(_telegram_prefs_path().read_text())
     except (OSError, ValueError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    token = str(data.get("bot_token") or "").strip()
-    if not token:
-        return None
-    return TelegramConfig(
-        bot_token=token,
-        webhook_url=data.get("webhook_url"),
-        webhook_secret=data.get("webhook_secret"),
-        allowed_usernames=list(data.get("allowed_usernames") or []),
-        default_workspace=str(data.get("default_workspace") or "/workspace"),
-    )
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 _telegram_service: TelegramBotService | None = None

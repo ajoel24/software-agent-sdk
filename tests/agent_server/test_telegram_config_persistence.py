@@ -1,20 +1,20 @@
-"""Tests for Telegram bot token persistence."""
+"""Tests for Telegram secret handling via the SecretsStore."""
 
 import json
-import os
 
 import pytest
 
+from openhands.agent_server.persistence.store import FileSecretsStore
 from openhands.agent_server.telegram_service import (
     TelegramConfig,
     _set_telegram_service,
-    load_telegram_config,
-    save_telegram_config,
+    load_telegram_prefs,
+    save_telegram_prefs,
 )
 
 
 @pytest.fixture
-def isolated_config_file(tmp_path, monkeypatch):
+def prefs_file(tmp_path, monkeypatch):
     path = tmp_path / "telegram.json"
     monkeypatch.setenv("TELEGRAM_CONFIG_FILE", str(path))
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
@@ -23,60 +23,95 @@ def isolated_config_file(tmp_path, monkeypatch):
     _set_telegram_service(None)
 
 
-def test_roundtrip(isolated_config_file):
-    config = TelegramConfig(
-        bot_token="  123:ABC\t",
-        webhook_url=None,
-        webhook_secret=None,
-        allowed_usernames=["alice"],
-        default_workspace="/projects",
+@pytest.fixture
+def store(tmp_path):
+    return FileSecretsStore(persistence_dir=tmp_path / "persist")
+
+
+def test_prefs_hold_no_secrets(prefs_file):
+    save_telegram_prefs(
+        TelegramConfig(
+            bot_token="123:ABC",
+            allowed_usernames=["alice"],
+            default_workspace="/projects",
+        )
     )
-    save_telegram_config(config)
+    saved = json.loads(prefs_file.read_text())
+    assert "bot_token" not in saved
+    assert saved["allowed_usernames"] == ["alice"]
 
-    loaded = load_telegram_config()
-    assert loaded is not None
-    assert loaded.bot_token == "123:ABC"
-    assert loaded.allowed_usernames == ["alice"]
-    assert loaded.default_workspace == "/projects"
-
-
-def test_missing_file_returns_none(isolated_config_file):
-    assert load_telegram_config() is None
+    prefs = load_telegram_prefs()
+    assert prefs["default_workspace"] == "/projects"
 
 
-def test_blank_token_not_loaded(isolated_config_file):
-    isolated_config_file.write_text(json.dumps({"bot_token": "  \t "}))
-    assert load_telegram_config() is None
+def test_token_roundtrip_in_store(store):
+    store.set_secret("telegram_bot_token", "  123:ABC\t", "Telegram bot token")
+    assert store.get_secret("telegram_bot_token") == "  123:ABC\t"
 
 
-def test_file_mode_is_private(isolated_config_file):
-    save_telegram_config(TelegramConfig(bot_token="123:ABC"))
-    assert (isolated_config_file.stat().st_mode & 0o777) == 0o600
+def test_no_prefs_file(prefs_file):
+    assert load_telegram_prefs() == {}
 
 
-def test_env_takes_priority(isolated_config_file, monkeypatch):
-    save_telegram_config(TelegramConfig(bot_token="file-token"))
+def test_env_priority_over_store(prefs_file, store, monkeypatch):
+    from unittest.mock import MagicMock, patch
+
+    from openhands.agent_server.telegram_router import _config_from_env_or_store
+
+    store.set_secret("telegram_bot_token", "store-token")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "  env-token\t")
 
-    from openhands.agent_server.telegram_router import _config_from_env_or_file
-
-    config = _config_from_env_or_file()
+    with (
+        patch(
+            "openhands.agent_server.telegram_router.get_secrets_store",
+            return_value=store,
+        ),
+        patch(
+            "openhands.agent_server.telegram_router.get_config",
+            return_value=MagicMock(),
+        ),
+    ):
+        config = _config_from_env_or_store(MagicMock())
     assert config is not None
     assert config.bot_token == "env-token"
 
 
-def test_file_fallback_without_env(isolated_config_file):
-    save_telegram_config(TelegramConfig(bot_token="file-token"))
+def test_store_fallback_without_env(prefs_file, store, monkeypatch):
+    from unittest.mock import MagicMock, patch
 
-    from openhands.agent_server.telegram_router import _config_from_env_or_file
+    from openhands.agent_server.telegram_router import _config_from_env_or_store
 
-    config = _config_from_env_or_file()
+    store.set_secret("telegram_bot_token", "store-token")
+    save_telegram_prefs(TelegramConfig(bot_token="store-token"))
+
+    with (
+        patch(
+            "openhands.agent_server.telegram_router.get_secrets_store",
+            return_value=store,
+        ),
+        patch(
+            "openhands.agent_server.telegram_router.get_config",
+            return_value=MagicMock(),
+        ),
+    ):
+        config = _config_from_env_or_store(MagicMock())
     assert config is not None
-    assert config.bot_token == "file-token"
+    assert config.bot_token == "store-token"
 
 
-def test_no_config_anywhere(isolated_config_file):
-    from openhands.agent_server.telegram_router import _config_from_env_or_file
+def test_nothing_configured(prefs_file, store, monkeypatch):
+    from unittest.mock import MagicMock, patch
 
-    assert _config_from_env_or_file() is None
-    assert "TELEGRAM_BOT_TOKEN" not in os.environ
+    from openhands.agent_server.telegram_router import _config_from_env_or_store
+
+    with (
+        patch(
+            "openhands.agent_server.telegram_router.get_secrets_store",
+            return_value=store,
+        ),
+        patch(
+            "openhands.agent_server.telegram_router.get_config",
+            return_value=MagicMock(),
+        ),
+    ):
+        assert _config_from_env_or_store(MagicMock()) is None

@@ -9,15 +9,19 @@ import os
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
+from openhands.agent_server._secrets_exposure import get_config
 from openhands.agent_server.conversation_service import ConversationService
 from openhands.agent_server.dependencies import get_conversation_service
+from openhands.agent_server.persistence import get_secrets_store
 from openhands.agent_server.telegram_service import (
+    TELEGRAM_BOT_TOKEN_SECRET_NAME,
+    TELEGRAM_WEBHOOK_SECRET_NAME,
     TelegramBotService,
     TelegramConfig,
     _get_telegram_service,
     _set_telegram_service,
-    load_telegram_config,
-    save_telegram_config,
+    load_telegram_prefs,
+    save_telegram_prefs,
 )
 from openhands.sdk.logger import get_logger
 
@@ -54,33 +58,40 @@ class TelegramWebhookResponse(BaseModel):
     ok: bool = True
 
 
-def _config_from_env_or_file() -> TelegramConfig | None:
-    """Bot config from env, falling back to the persisted file."""
+def _config_from_env_or_store(request: Request) -> TelegramConfig | None:
+    """Bot config from env, falling back to persisted prefs + secret."""
     token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
-    if token:
-        return TelegramConfig(
-            bot_token=token,
-            webhook_url=os.environ.get("TELEGRAM_WEBHOOK_URL"),
-            webhook_secret=os.environ.get("TELEGRAM_WEBHOOK_SECRET"),
-            allowed_usernames=[
-                u.strip().lstrip("@")
-                for u in os.environ.get("TELEGRAM_ALLOWED_USERNAMES", "").split(",")
-                if u.strip()
-            ],
-            default_workspace=os.environ.get(
-                "TELEGRAM_DEFAULT_WORKSPACE", "/workspace"
-            ),
-        )
-    return load_telegram_config()
+    store = get_secrets_store(get_config(request))
+    if not token:
+        stored = store.get_secret(TELEGRAM_BOT_TOKEN_SECRET_NAME)
+        token = (stored or "").strip()
+    if not token:
+        return None
+    prefs = load_telegram_prefs()
+    return TelegramConfig(
+        bot_token=token,
+        webhook_url=os.environ.get("TELEGRAM_WEBHOOK_URL") or prefs.get("webhook_url"),
+        webhook_secret=os.environ.get("TELEGRAM_WEBHOOK_SECRET")
+        or store.get_secret(TELEGRAM_WEBHOOK_SECRET_NAME),
+        allowed_usernames=[
+            u.strip().lstrip("@")
+            for u in os.environ.get("TELEGRAM_ALLOWED_USERNAMES", "").split(",")
+            if u.strip()
+        ]
+        or list(prefs.get("allowed_usernames") or []),
+        default_workspace=os.environ.get("TELEGRAM_DEFAULT_WORKSPACE")
+        or str(prefs.get("default_workspace") or "/workspace"),
+    )
 
 
 def _get_or_create_telegram_service(
+    request: Request,
     conversation_service: ConversationService = Depends(get_conversation_service),
 ) -> TelegramBotService:
     service = _get_telegram_service()
     if service is not None:
         return service
-    config = _config_from_env_or_file()
+    config = _config_from_env_or_store(request)
     if config is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -128,16 +139,20 @@ async def telegram_status(
 @telegram_router.post("/start")
 async def telegram_start(
     req: TelegramStartRequest,
+    request: Request,
     conversation_service: ConversationService = Depends(get_conversation_service),
 ) -> dict:
     """Start the Telegram bot.
 
     If the bot is already running, returns its current status.
+    On success the token is stored in the SecretsStore, so restarts
+    don't need re-entry.
     """
     existing = _get_telegram_service()
     if existing and existing.is_running():
         return {"status": "already_running", **existing.get_status()}
 
+    store = get_secrets_store(get_config(request))
     token = (req.bot_token or os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
     if token:
         config = TelegramConfig(
@@ -153,7 +168,7 @@ async def telegram_start(
             default_workspace=req.default_workspace,
         )
     else:
-        config = load_telegram_config()
+        config = _config_from_env_or_store(request)
     if config is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -163,7 +178,18 @@ async def telegram_start(
     _set_telegram_service(service)
     await service.start()
     try:
-        save_telegram_config(config)
+        store.set_secret(
+            TELEGRAM_BOT_TOKEN_SECRET_NAME,
+            config.bot_token,
+            "Telegram bot token",
+        )
+        if config.webhook_secret:
+            store.set_secret(
+                TELEGRAM_WEBHOOK_SECRET_NAME,
+                config.webhook_secret,
+                "Telegram webhook secret",
+            )
+        save_telegram_prefs(config)
     except OSError as exc:
         logger.warning(f"Could not persist Telegram config: {exc}")
     return {"status": "started", **service.get_status()}
