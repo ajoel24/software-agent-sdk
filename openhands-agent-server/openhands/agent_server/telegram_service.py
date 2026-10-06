@@ -121,9 +121,11 @@ class TelegramBotService:
         self,
         config: TelegramConfig,
         conversation_service: ConversationService,
+        secrets_store=None,
     ) -> None:
         self.config = config
         self._conversation_service = conversation_service
+        self._secrets_store = secrets_store
         self._chat_sessions: dict[int, TelegramChatSession] = {}
         self._subscribers: dict[int, UUID] = {}
         self._pubsubs: dict[UUID, PubSub[Event]] = {}
@@ -241,20 +243,60 @@ class TelegramBotService:
             f"Total messages: {status['total_messages']}"
         )
 
-    def _resolve_profile_id(self, profile_name: str | None) -> UUID:
-        """Profile name (or the configured default) to stored profile id."""
+    def _resolve_profile(self, profile_name: str | None):
+        """Profile by name (or the configured default) from the store.
+
+        Falls back to the only available profile when `default` is
+        requested but doesn't exist.
+        """
         from openhands.agent_server.persistence import get_agent_profile_store
 
+        store = get_agent_profile_store()
         name = (profile_name or self.config.agent_profile_name or "default").strip()
-        profile = get_agent_profile_store().load(name)
-        return profile.id
+        try:
+            return store.load(name)
+        except FileNotFoundError:
+            if name == "default":
+                available = [p.removesuffix(".json") for p in store.list()]
+                if len(available) == 1:
+                    return store.load(available[0])
+            raise
+
+    def _conversation_secrets(self, profile) -> dict[str, Any]:
+        """User secrets the profile is allowed to receive.
+
+        Mirrors the server's own scoping: ``secret_refs=None`` exposes all
+        stored secrets, otherwise only the listed names.
+        """
+        from openhands.agent_server.persistence import get_secrets_store
+        from openhands.sdk.secret.secrets import StaticSecret
+
+        try:
+            store = self._secrets_store or get_secrets_store()
+            secrets = store.load()
+            stored_names = list(secrets.custom_secrets) if secrets else []
+        except Exception as exc:
+            logger.warning(f"Could not read secrets store for Telegram: {exc}")
+            return {}
+        refs = getattr(profile, "secret_refs", None)
+        names = stored_names if refs is None else [n for n in refs if n in stored_names]
+        result: dict[str, Any] = {}
+        for secret_name in names:
+            try:
+                value = store.get_secret(secret_name)
+            except Exception as exc:
+                logger.warning(f"Could not read secret for Telegram: {exc}")
+                continue
+            if value:
+                result[secret_name] = StaticSecret(value=value)
+        return result
 
     async def _cmd_new(self, update, _context) -> None:
         chat_id = update.effective_chat.id
         parts = (update.message.text or "").split()
         profile_name = parts[1] if len(parts) > 1 else None
         try:
-            self._resolve_profile_id(profile_name)
+            profile = await asyncio.to_thread(self._resolve_profile, profile_name)
         except FileNotFoundError as exc:
             await update.message.reply_text(f"⛔ {exc}")
             return
@@ -270,9 +312,9 @@ class TelegramBotService:
                 chat_id=chat_id,
                 chat_title=update.effective_chat.title,
                 chat_username=update.effective_user.username,
-                profile_name=profile_name,
+                profile_name=profile.name,
             )
-        used = profile_name or self.config.agent_profile_name
+        used = profile.name
         await update.message.reply_text(
             f"🆕 New conversation started (profile: {used}). Send me a message!"
         )
@@ -312,7 +354,13 @@ class TelegramBotService:
             await self._handle_chat_message(chat_id, text, session)
         except Exception as exc:
             logger.error(f"Error handling Telegram message: {exc}", exc_info=True)
-            await update.message.reply_text(f"❌ Error: {str(exc)[:500]}")
+            detail = str(exc)[:500]
+            if "Authentication required" in detail:
+                detail += (
+                    "\n\nAdd your provider key in Canvas → Settings → "
+                    "Secrets, then /new."
+                )
+            await update.message.reply_text(f"❌ Error: {detail}")
             session.status = "error"
 
     async def _handle_chat_message(
@@ -348,11 +396,12 @@ class TelegramBotService:
         from openhands.sdk.workspace import LocalWorkspace
 
         try:
-            profile_id = await asyncio.to_thread(self._resolve_profile_id, profile_name)
+            profile = await asyncio.to_thread(self._resolve_profile, profile_name)
             req = StartConversationRequest(
                 workspace=LocalWorkspace(working_dir=self.config.default_workspace),
                 tags={"source": "telegram", "chatid": str(chat_id)},
-                agent_profile_id=profile_id,
+                agent_profile_id=profile.id,
+                secrets=self._conversation_secrets(profile),
             )
             info, _ = await self._conversation_service.start_conversation(req)
             return {"id": info.id}
