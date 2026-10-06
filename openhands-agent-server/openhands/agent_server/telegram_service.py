@@ -326,7 +326,7 @@ class TelegramBotService:
         try:
             req = StartConversationRequest(
                 workspace=LocalWorkspace(working_dir=self.config.default_workspace),
-                tags={"source": "telegram", "chat_id": str(chat_id)},
+                tags={"source": "telegram", "chatid": str(chat_id)},
             )
             info, _ = await self._conversation_service.start_conversation(req)
             return {"id": info.id}
