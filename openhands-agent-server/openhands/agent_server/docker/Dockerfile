@@ -25,7 +25,7 @@ ARG INSTALL_ACP_PROVIDERS=claude-code,codex,gemini-cli
 # contents; an unknown key fails the build. The GitHub CLI is expected to
 # join this list later (see OpenHands/software-agent-sdk#4645) — the parsing
 # below is written so that's a one-case addition, not a signature change.
-ARG INSTALL_CAPABILITIES=vscode,browser,docker
+ARG INSTALL_CAPABILITIES=vscode,browser,docker,gh
 
 ####################################################################################
 # Canonical Python + Node runtime
@@ -411,9 +411,9 @@ COPY --from=ghcr.io/astral-sh/uv:0.12.15 /uv /uvx /bin/
 RUN set -eux; \
     for capability in $(echo "$INSTALL_CAPABILITIES" | tr ',' ' '); do \
       case "$capability" in \
-        vscode|browser|docker) ;; \
+        vscode|browser|docker|gh) ;; \
         *) echo "Unknown capability '$capability' in INSTALL_CAPABILITIES" \
-             "(expected one of: vscode, browser, docker)" >&2; exit 1;; \
+             "(expected one of: vscode, browser, docker, gh)" >&2; exit 1;; \
       esac; \
     done
 
@@ -514,7 +514,13 @@ RUN set -eux; \
     echo '{"mtu": 1450}' > /etc/docker/daemon.json
 
 # --- GitHub CLI ---
+# Selected by the `gh` capability. Nothing in this repo execs `gh`
+# (all gh usage is host-side), so factory images exclude it.
 RUN set -eux; \
+    case ",$INSTALL_CAPABILITIES," in \
+      *,gh*) ;; \
+      *) echo "INSTALL_CAPABILITIES excludes gh; skipping GitHub CLI"; exit 0;; \
+    esac; \
     mkdir -p -m 755 /etc/apt/keyrings; \
     wget -nv -O /etc/apt/keyrings/githubcli-archive-keyring.gpg \
         https://cli.github.com/packages/githubcli-archive-keyring.gpg; \
