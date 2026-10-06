@@ -128,8 +128,22 @@ RUN groupadd -g ${GID} ${USERNAME} \
  && chown -R ${USERNAME}:${USERNAME} /agent-server
 USER ${USERNAME}
 WORKDIR /agent-server
-# Cache-friendly: lockfiles first
+# Cache-friendly: manifests first, sources after. Third-party deps are synced
+# before any source is copied, so .py edits don't invalidate the dep layer.
 COPY --chown=${USERNAME}:${USERNAME} pyproject.toml uv.lock README.md LICENSE ./
+COPY --chown=${USERNAME}:${USERNAME} openhands-sdk/pyproject.toml ./openhands-sdk/
+COPY --chown=${USERNAME}:${USERNAME} openhands-tools/pyproject.toml ./openhands-tools/
+COPY --chown=${USERNAME}:${USERNAME} openhands-workspace/pyproject.toml ./openhands-workspace/
+COPY --chown=${USERNAME}:${USERNAME} openhands-agent-server/pyproject.toml ./openhands-agent-server/
+RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
+    EXTRA_FLAGS=""; \
+    if [ "$ENABLE_VERTEX" = "1" ]; then EXTRA_FLAGS="--extra vertex"; fi; \
+    uv python install 3.13 && \
+    uv venv --python-preference only-managed --python 3.13 .venv && \
+    if [ "$INSTALL_TELEGRAM" = "1" ]; then EXTRA_FLAGS="$EXTRA_FLAGS --extra telegram"; fi; \
+    uv sync --frozen --no-editable --no-install-workspace --managed-python --extra boto3 $EXTRA_FLAGS && \
+    readlink -f .venv/bin/python | grep -q '^/agent-server/uv-managed-python/'
+# Sources change often; workspace members install fast on top of warm deps.
 COPY --chown=${USERNAME}:${USERNAME} openhands-sdk ./openhands-sdk
 COPY --chown=${USERNAME}:${USERNAME} openhands-tools ./openhands-tools
 COPY --chown=${USERNAME}:${USERNAME} openhands-workspace ./openhands-workspace
@@ -137,11 +151,8 @@ COPY --chown=${USERNAME}:${USERNAME} openhands-agent-server ./openhands-agent-se
 RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
     EXTRA_FLAGS=""; \
     if [ "$ENABLE_VERTEX" = "1" ]; then EXTRA_FLAGS="--extra vertex"; fi; \
-    uv python install 3.13 && \
-    uv venv --python-preference only-managed --python 3.13 .venv && \
     if [ "$INSTALL_TELEGRAM" = "1" ]; then EXTRA_FLAGS="$EXTRA_FLAGS --extra telegram"; fi; \
-    uv sync --frozen --no-editable --managed-python --extra boto3 $EXTRA_FLAGS && \
-    readlink -f .venv/bin/python | grep -q '^/agent-server/uv-managed-python/'
+    uv sync --frozen --no-editable --managed-python --extra boto3 $EXTRA_FLAGS
 
 ####################################################################################
 # Binary Builder (binary mode)
