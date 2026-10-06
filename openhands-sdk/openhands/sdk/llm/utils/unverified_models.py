@@ -105,7 +105,12 @@ def _get_litellm_provider_names() -> set[str]:
     return result
 
 
-_LITELLM_PROVIDER_NAMES = _get_litellm_provider_names()
+# Gateway prefixes the SDK routes itself (see ``opencode_provider``) that
+# LiteLLM does not know natively. Listed explicitly so model ids under them
+# bucket under the real provider instead of "other".
+_SDK_KNOWN_PROVIDER_PREFIXES = frozenset({"opencode"})
+
+_LITELLM_PROVIDER_NAMES = _get_litellm_provider_names() | _SDK_KNOWN_PROVIDER_PREFIXES
 
 
 def _extract_model_and_provider(model: str) -> tuple[str, str, str]:

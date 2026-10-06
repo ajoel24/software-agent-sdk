@@ -761,6 +761,15 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
             if base == "https://api.openai.com" or base == "https://api.openai.com/":
                 d["base_url"] = None  # Let LiteLLM use its default which includes /v1
 
+        # OpenCode Zen gateway: default credentials from the environment.
+        # The model keeps its canonical ``opencode/<id>`` form (translated
+        # to ``openai/<id>`` only at the LiteLLM call boundary); LiteLLM
+        # would otherwise look for OPENAI_API_KEY instead of OPENCODE_API_KEY.
+        if model_val.startswith("opencode/") and not d.get("api_key"):
+            env_key = os.environ.get("OPENCODE_API_KEY")
+            if env_key:
+                d["api_key"] = env_key
+
         return d
 
     @model_validator(mode="after")

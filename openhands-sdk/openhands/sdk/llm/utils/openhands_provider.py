@@ -3,6 +3,11 @@ from __future__ import annotations
 from typing import Any, Final, TypedDict
 from urllib.parse import urlsplit, urlunsplit
 
+from openhands.sdk.llm.utils.opencode_provider import (
+    OPENCODE_ZEN_BASE_URL,
+    is_opencode_model,
+    to_litellm_model,
+)
 from openhands.sdk.llm.utils.verified_models import VERIFIED_MODELS
 
 
@@ -54,6 +59,11 @@ def litellm_call_kwargs(model: str, base_url: str | None) -> LiteLLMCallKwargs:
         return {
             "model": f"{LITELLM_PROXY_PREFIX}{model_name}",
             "api_base": base_url or OPENHANDS_LLM_PROXY_BASE_URL,
+        }
+    if is_opencode_model(model):
+        return {
+            "model": to_litellm_model(model),
+            "api_base": base_url or OPENCODE_ZEN_BASE_URL,
         }
     return {"model": model, "api_base": base_url}
 
