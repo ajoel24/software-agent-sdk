@@ -146,6 +146,14 @@ export type { BashWebSocketClientOptions } from './events/bash-websocket-client'
 // HTTP client
 export { HttpClient, HttpError } from './client/http-client';
 export { HooksClient } from './client/hooks-client';
+export { TelegramClient } from './client/telegram-client';
+export type { TelegramClientOptions } from './client/telegram-client';
+export type {
+  TelegramBotStatus,
+  TelegramStartRequest,
+  TelegramStatus,
+  TelegramChatSession,
+} from './telegram/types';
 export { MCPClient } from './client/mcp-client';
 export { WorkspacesClient } from './client/workspaces-client';
 export {

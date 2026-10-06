@@ -25,6 +25,9 @@ dependencies = [
 # on the import path. Constrained to the major already resolved in uv.lock so
 # installing the extra cannot force a resolver conflict.
 posthog = ["posthog>=7.60.0,<8"]
+# Telegram bot integration. Optional so the core server runs without the
+# python-telegram-bot dependency on the import path.
+telegram = ["python-telegram-bot>=22.0,<23"]
 
 [project.urls]
 Source = "https://github.com/OpenHands/software-agent-sdk"
