@@ -4,9 +4,9 @@ from typing import Any, Final, TypedDict
 from urllib.parse import urlsplit, urlunsplit
 
 from openhands.sdk.llm.utils.opencode_provider import (
-    OPENCODE_ZEN_BASE_URL,
     is_opencode_model,
     to_litellm_model,
+    zen_base_url,
 )
 from openhands.sdk.llm.utils.verified_models import VERIFIED_MODELS
 
@@ -63,7 +63,7 @@ def litellm_call_kwargs(model: str, base_url: str | None) -> LiteLLMCallKwargs:
     if is_opencode_model(model):
         return {
             "model": to_litellm_model(model),
-            "api_base": base_url or OPENCODE_ZEN_BASE_URL,
+            "api_base": zen_base_url(model, base_url),
         }
     return {"model": model, "api_base": base_url}
 
