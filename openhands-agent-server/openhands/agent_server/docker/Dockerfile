@@ -110,7 +110,7 @@ RUN set -eux; \
 # See OpenHands/software-agent-sdk#2761.
 ####################################################################################
 FROM python:3.13-bookworm AS builder
-ARG USERNAME UID GID ENABLE_VERTEX
+ARG USERNAME UID GID ENABLE_VERTEX INSTALL_TELEGRAM
 ENV UV_PROJECT_ENVIRONMENT=/agent-server/.venv
 ENV UV_PYTHON_INSTALL_DIR=/agent-server/uv-managed-python
 # Hardlinks never survive podman cache mounts (different filesystems);
@@ -139,6 +139,7 @@ RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
     if [ "$ENABLE_VERTEX" = "1" ]; then EXTRA_FLAGS="--extra vertex"; fi; \
     uv python install 3.13 && \
     uv venv --python-preference only-managed --python 3.13 .venv && \
+    if [ "$INSTALL_TELEGRAM" = "1" ]; then EXTRA_FLAGS="$EXTRA_FLAGS --extra telegram"; fi; \
     uv sync --frozen --no-editable --managed-python --extra boto3 $EXTRA_FLAGS && \
     readlink -f .venv/bin/python | grep -q '^/agent-server/uv-managed-python/'
 
@@ -147,12 +148,13 @@ RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
 # We run pyinstaller here to produce openhands-agent-server
 ####################################################################################
 FROM builder AS binary-builder
-ARG USERNAME UID GID ENABLE_VERTEX
+ARG USERNAME UID GID ENABLE_VERTEX INSTALL_TELEGRAM
 
 # We need --dev for pyinstaller
 RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
     EXTRA_FLAGS=""; \
     if [ "$ENABLE_VERTEX" = "1" ]; then EXTRA_FLAGS="--extra vertex"; fi; \
+    if [ "$INSTALL_TELEGRAM" = "1" ]; then EXTRA_FLAGS="$EXTRA_FLAGS --extra telegram"; fi; \
     uv sync --frozen --dev --no-editable --extra boto3 $EXTRA_FLAGS
 
 RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
