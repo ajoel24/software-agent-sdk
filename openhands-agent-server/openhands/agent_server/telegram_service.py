@@ -94,6 +94,7 @@ class TelegramChatSession:
     chat_title: str | None = None
     chat_username: str | None = None
     conversation_id: UUID | None = None
+    profile_name: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     last_activity: datetime = field(default_factory=lambda: datetime.now(UTC))
     message_count: int = 0
@@ -109,6 +110,7 @@ class TelegramConfig:
     webhook_secret: str | None = None
     allowed_usernames: list[str] = field(default_factory=list)
     default_workspace: str = "/workspace"
+    agent_profile_name: str = "default"
     max_concurrent_chats: int = 10
 
 
@@ -222,7 +224,7 @@ class TelegramBotService:
             f"👋 Hello {user.first_name}!\n\n"
             "Send me a message and I'll help you with coding tasks.\n\n"
             "Commands:\n"
-            "/new — Start a new conversation\n"
+            "/new [profile] — Start a new conversation\n"
             "/status — Show bot status\n"
             "/stop — Stop current conversation\n"
             "/help — Show this help"
@@ -239,8 +241,23 @@ class TelegramBotService:
             f"Total messages: {status['total_messages']}"
         )
 
+    def _resolve_profile_id(self, profile_name: str | None) -> UUID:
+        """Profile name (or the configured default) to stored profile id."""
+        from openhands.agent_server.persistence import get_agent_profile_store
+
+        name = (profile_name or self.config.agent_profile_name or "default").strip()
+        profile = get_agent_profile_store().load(name)
+        return profile.id
+
     async def _cmd_new(self, update, _context) -> None:
         chat_id = update.effective_chat.id
+        parts = (update.message.text or "").split()
+        profile_name = parts[1] if len(parts) > 1 else None
+        try:
+            self._resolve_profile_id(profile_name)
+        except FileNotFoundError as exc:
+            await update.message.reply_text(f"⛔ {exc}")
+            return
         async with self._lock:
             if chat_id in self._chat_sessions:
                 old = self._chat_sessions[chat_id]
@@ -253,9 +270,11 @@ class TelegramBotService:
                 chat_id=chat_id,
                 chat_title=update.effective_chat.title,
                 chat_username=update.effective_user.username,
+                profile_name=profile_name,
             )
+        used = profile_name or self.config.agent_profile_name
         await update.message.reply_text(
-            "🆕 New conversation started. Send me a message!"
+            f"🆕 New conversation started (profile: {used}). Send me a message!"
         )
 
     async def _cmd_stop(self, update, _context) -> None:
@@ -300,7 +319,7 @@ class TelegramBotService:
         self, chat_id: int, text: str, session: TelegramChatSession
     ) -> None:
         if session.conversation_id is None:
-            conv = await self._create_conversation(chat_id)
+            conv = await self._create_conversation(chat_id, session.profile_name)
             if conv is None:
                 await self._send_message(chat_id, "❌ Failed to create conversation")
                 return
@@ -323,16 +342,27 @@ class TelegramBotService:
         )
         session.status = "idle"
 
-    async def _create_conversation(self, chat_id: int) -> dict[str, Any] | None:
+    async def _create_conversation(
+        self, chat_id: int, profile_name: str | None = None
+    ) -> dict[str, Any] | None:
         from openhands.sdk.workspace import LocalWorkspace
 
         try:
+            profile_id = await asyncio.to_thread(self._resolve_profile_id, profile_name)
             req = StartConversationRequest(
                 workspace=LocalWorkspace(working_dir=self.config.default_workspace),
                 tags={"source": "telegram", "chatid": str(chat_id)},
+                agent_profile_id=profile_id,
             )
             info, _ = await self._conversation_service.start_conversation(req)
             return {"id": info.id}
+        except FileNotFoundError as exc:
+            logger.error(f"No agent profile for Telegram chat {chat_id}: {exc}")
+            await self._send_message(
+                chat_id,
+                f"⛔ {exc}\nCreate one in Settings → Agents, or /new <profile>.",
+            )
+            return None
         except Exception as exc:
             logger.error(f"Failed to create conversation for {chat_id}: {exc}")
             return None
@@ -384,6 +414,7 @@ def save_telegram_prefs(config: TelegramConfig) -> None:
         "webhook_url": config.webhook_url,
         "allowed_usernames": config.allowed_usernames,
         "default_workspace": config.default_workspace,
+        "agent_profile_name": config.agent_profile_name,
     }
     path.write_text(json.dumps(payload, indent=2))
 
