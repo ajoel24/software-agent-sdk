@@ -7,6 +7,7 @@ conversations, and streams agent responses back to Telegram users.
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import os
 from collections import deque
@@ -38,9 +39,11 @@ class _TelegramEventSubscriber(Subscriber[Event]):
         self,
         chat_id: int,
         send_message: Callable[[int, str], Awaitable[None]],
+        on_run_end: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self.chat_id = chat_id
         self._send = send_message
+        self._on_run_end = on_run_end
         self._buffer: list[str] = []
         self._flush_task: asyncio.Task[None] | None = None
         self._last_text = ""
@@ -57,8 +60,13 @@ class _TelegramEventSubscriber(Subscriber[Event]):
             if event.source == "agent":
                 text = "\n".join(content_to_str(event.llm_message.content))
         elif isinstance(event, ConversationStateUpdateEvent):
-            if event.key == "execution_status" and event.value == "ERROR":
-                text = "❌ Conversation error"
+            # value arrives serialized: plain string or str-enum member.
+            if event.key == "execution_status" and isinstance(event.value, str):
+                status_value = event.value.lower()
+                if status_value == "error":
+                    text = "❌ Conversation error"
+                if status_value in ("idle", "error") and self._on_run_end:
+                    await self._on_run_end()
 
         if not text or text == self._last_text:
             return
@@ -129,6 +137,7 @@ class TelegramBotService:
         self._secrets_store = secrets_store
         self._chat_sessions: dict[int, TelegramChatSession] = {}
         self._subscribers: dict[int, UUID] = {}
+        self._typing_tasks: dict[int, asyncio.Task[None]] = {}
         self._lock = asyncio.Lock()
         # Recently processed Telegram update ids. Telegram redelivers
         # updates on polling races; without this, one /new or message
@@ -424,6 +433,7 @@ class TelegramBotService:
             subscriber = _TelegramEventSubscriber(
                 chat_id=chat_id,
                 send_message=self._send_message,
+                on_run_end=functools.partial(self._stop_typing, chat_id),
             )
             self._subscribers[chat_id] = await event_service.subscribe_to_events(
                 subscriber
@@ -434,9 +444,37 @@ class TelegramBotService:
         await event_service.send_message(
             Message(role="user", content=[TextContent(text=text)]), run=True
         )
+        await self._start_typing(chat_id)
         session.status = "idle"
 
+    async def _start_typing(self, chat_id: int) -> None:
+        """Show the typing indicator until the run ends.
+
+        Telegram clears it after ~5s, so re-send periodically. Stopped by
+        the run-end state event, the next message, unsubscribe, or stop.
+        """
+        await self._stop_typing(chat_id)
+        app = self._app
+        if app is None or app.bot is None:
+            return
+
+        async def _loop() -> None:
+            for _ in range(150):  # ~10 minute cap against runaway tasks
+                with suppress(Exception):
+                    await app.bot.send_chat_action(chat_id=chat_id, action="typing")
+                await asyncio.sleep(4)
+
+        self._typing_tasks[chat_id] = asyncio.create_task(_loop())
+
+    async def _stop_typing(self, chat_id: int) -> None:
+        task = self._typing_tasks.pop(chat_id, None)
+        if task is not None and not task.done():
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
     async def _unsubscribe_chat(self, chat_id: int, conv_id: UUID | None) -> None:
+        await self._stop_typing(chat_id)
         sub_id = self._subscribers.pop(chat_id, None)
         if sub_id is None or conv_id is None:
             return
