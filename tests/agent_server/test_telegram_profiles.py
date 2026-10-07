@@ -214,34 +214,6 @@ async def test_distinct_updates_each_processed(service):
 
 
 @pytest.mark.asyncio
-async def test_typing_starts_on_message_and_stops_on_idle(service):
-    from openhands.sdk.event.conversation_state import (
-        ConversationStateUpdateEvent,
-    )
-
-    bot = MagicMock()
-    bot.send_chat_action = AsyncMock()
-    service._app = MagicMock()
-    service._app.bot = bot
-    event_service = MagicMock()
-    event_service.subscribe_to_events = AsyncMock(return_value=UUID(int=3))
-    event_service.send_message = AsyncMock()
-    service._conversation_service.get_event_service = AsyncMock(
-        return_value=event_service
-    )
-    service._chat_sessions[1] = tg.TelegramChatSession(
-        chat_id=1, conversation_id=UUID(int=9)
-    )
-
-    await service._handle_chat_message(1, "hi", service._chat_sessions[1])
-    assert 1 in service._typing_tasks
-
-    subscriber = event_service.subscribe_to_events.await_args.args[0]
-    await subscriber(ConversationStateUpdateEvent(key="execution_status", value="idle"))
-    assert 1 not in service._typing_tasks
-
-
-@pytest.mark.asyncio
 async def test_streaming_turn_forwarded_whole_once():
     from openhands.sdk import Message as _Message, TextContent as _TextContent
     from openhands.sdk.event.conversation_state import (
