@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from openhands.agent_server._secrets_exposure import get_config
 from openhands.agent_server.conversation_service import ConversationService
 from openhands.agent_server.dependencies import get_conversation_service
-from openhands.agent_server.persistence import get_secrets_store
+from openhands.agent_server.persistence import SecretsStore, get_secrets_store
 from openhands.agent_server.telegram_config import (
     TELEGRAM_BOT_TOKEN_SECRET_NAME,
     TELEGRAM_WEBHOOK_SECRET_NAME,
@@ -72,6 +72,18 @@ class TelegramChatSessionResponse(BaseModel):
     status: str = "idle"
     message_count: int = 0
     last_activity: str | None = None
+
+
+class TelegramStatusResponse(BaseModel):
+    status: str
+    active_chats: int
+    total_messages: int
+    bot_token_configured: bool
+    webhook_url: str | None = None
+
+
+class TelegramStartResponse(TelegramStatusResponse):
+    result: str
 
 
 def _parse_allowed_usernames(raw: str | None) -> list[str]:
@@ -164,20 +176,30 @@ async def telegram_webhook(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Telegram bot is not running",
         )
+    secret = service.config.webhook_secret
+    if secret and request.headers.get("X-Telegram-Bot-Api-Secret-Token") != secret:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid webhook secret",
+        )
     payload = await request.json()
     await service.handle_webhook(payload)
     return TelegramWebhookResponse()
 
 
-@telegram_router.get("/status")
+@telegram_router.get("/status", response_model=TelegramStatusResponse)
 async def telegram_status(
     service: TelegramBotService = Depends(_get_or_create_telegram_service),
-) -> dict:
+) -> TelegramStatusResponse:
     """Get the current status of the Telegram bot integration."""
-    result = service.get_status()
-    result["bot_token_configured"] = bool(service.config.bot_token)
-    result["webhook_url"] = service.config.webhook_url
-    return result
+    live = service.get_status()
+    return TelegramStatusResponse(
+        status=live["status"],
+        active_chats=live["active_chats"],
+        total_messages=live["total_messages"],
+        bot_token_configured=bool(service.config.bot_token),
+        webhook_url=service.config.webhook_url,
+    )
 
 
 def _resolve_start_config(
@@ -186,7 +208,7 @@ def _resolve_start_config(
     return _config_from_env_or_store(request, req)
 
 
-def _persist_start_config(store, config: TelegramConfig) -> None:
+def _persist_start_config(store: SecretsStore, config: TelegramConfig) -> None:
     """Store token material in the SecretsStore and prefs on disk."""
     try:
         store.set_secret(
@@ -205,12 +227,12 @@ def _persist_start_config(store, config: TelegramConfig) -> None:
         logger.warning(f"Could not persist Telegram config: {exc}")
 
 
-@telegram_router.post("/start")
+@telegram_router.post("/start", response_model=TelegramStartResponse)
 async def telegram_start(
     req: TelegramStartRequest,
     request: Request,
     conversation_service: ConversationService = Depends(get_conversation_service),
-) -> dict:
+) -> TelegramStartResponse:
     """Start the Telegram bot.
 
     If the bot is already running, returns its current status.
@@ -219,7 +241,8 @@ async def telegram_start(
     """
     existing = _get_telegram_service_state(request)
     if existing and existing.is_running():
-        return {"status": "already_running", **existing.get_status()}
+        live = existing.get_status()
+        return TelegramStartResponse(result="already_running", **live)
     if existing:
         with suppress(Exception):
             await existing.stop()
@@ -239,7 +262,8 @@ async def telegram_start(
     _set_telegram_service_state(request, service)
     await service.start()
     _persist_start_config(get_secrets_store(get_config(request)), config)
-    return {"status": "started", **service.get_status()}
+    live = service.get_status()
+    return TelegramStartResponse(result="started", **live)
 
 
 @telegram_router.post("/stop")

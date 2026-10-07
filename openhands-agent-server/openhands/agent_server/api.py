@@ -252,6 +252,7 @@ async def api_lifespan(api: FastAPI) -> AsyncIterator[None]:
         # config. We still mark the /ready endpoint as ready so a warm-pool
         # orchestrator can tell the pod has finished booting and is
         # available to receive its /api/init payload.
+        api.state.telegram_service = None
         if deferred:
             init_service = InitService(api, base_config=config)
             api.state.init_service = init_service
@@ -261,6 +262,7 @@ async def api_lifespan(api: FastAPI) -> AsyncIterator[None]:
                 yield
             finally:
                 await init_service.teardown()
+                await _stop_telegram_service(api)
                 await stop_stateless_services()
             return
 
@@ -301,10 +303,7 @@ async def api_lifespan(api: FastAPI) -> AsyncIterator[None]:
                 session_store = getattr(api.state, "app_backend_session_store", None)
                 if session_store is not None:
                     await session_store.shutdown()
-                telegram_service = getattr(api.state, "telegram_service", None)
-                if telegram_service is not None:
-                    with suppress(Exception):
-                        await telegram_service.stop()
+                await _stop_telegram_service(api)
                 await conversation_registry.shutdown()
                 if retention_task is not None:
                     retention_task.cancel()
@@ -431,6 +430,13 @@ def _telegram_dependency_available() -> bool:
         return importlib.util.find_spec("telegram") is not None
     except (ImportError, ValueError):
         return "telegram" in sys.modules
+
+
+async def _stop_telegram_service(api: FastAPI) -> None:
+    service = getattr(api.state, "telegram_service", None)
+    if service is not None:
+        with suppress(Exception):
+            await service.stop()
 
 
 def _add_api_routes(app: FastAPI) -> None:
