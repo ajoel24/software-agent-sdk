@@ -45,8 +45,10 @@ class _TelegramEventSubscriber(Subscriber[Event]):
         self._send = send_message
         self._on_run_end = on_run_end
         self._buffer: list[str] = []
-        self._flush_task: asyncio.Task[None] | None = None
-        self._last_text = ""
+
+    @property
+    def _buffered_text(self) -> str:
+        return "".join(self._buffer)
 
     async def __call__(self, event: Event) -> None:
         from openhands.sdk.event.llm_convertible.message import MessageEvent
@@ -65,21 +67,35 @@ class _TelegramEventSubscriber(Subscriber[Event]):
                 status_value = event.value.lower()
                 if status_value == "error":
                     text = "❌ Conversation error"
-                if status_value in ("idle", "error") and self._on_run_end:
-                    await self._on_run_end()
+                if status_value in ("idle", "error"):
+                    await self._flush()
+                    if self._on_run_end:
+                        await self._on_run_end()
 
-        if not text or text == self._last_text:
+        if not text:
             return
-        self._last_text = text
-        self._buffer.append(text)
-        if self._flush_task is None or self._flush_task.done():
-            self._flush_task = asyncio.create_task(self._delayed_flush())
+        # Streaming deltas accumulate; the final MessageEvent usually
+        # repeats the full text, so collapse overlaps instead of
+        # duplicating. Flushing only whole turns keeps markdown (e.g.
+        # code fences) intact — timer-based mid-stream flushes split
+        # responses at arbitrary points.
+        buffered = self._buffered_text
+        if buffered and (buffered in text or text in buffered):
+            self._buffer = [text if len(text) > len(buffered) else buffered]
+        elif text != buffered:
+            self._buffer.append(text)
+        # Bound memory on huge streams; only splits past ~3500 chars.
+        if len(self._buffered_text) > 3500:
+            await self._flush()
 
-    async def _delayed_flush(self) -> None:
-        await asyncio.sleep(0.5)
+    async def flush(self) -> None:
+        """Send the aggregated turn as one message, if any."""
+        await self._flush()
+
+    async def _flush(self) -> None:
         if not self._buffer:
             return
-        msg = "".join(self._buffer)
+        msg = self._buffered_text
         self._buffer.clear()
         if len(msg) > 4000:
             msg = msg[:3990] + "\n... (truncated)"
@@ -89,10 +105,7 @@ class _TelegramEventSubscriber(Subscriber[Event]):
             logger.warning(f"Failed to send Telegram message: {exc}")
 
     async def close(self) -> None:
-        if self._flush_task and not self._flush_task.done():
-            self._flush_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._flush_task
+        await self._flush()
 
 
 @dataclass
