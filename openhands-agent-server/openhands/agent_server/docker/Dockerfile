@@ -203,16 +203,12 @@ ENV ACP_NODE_DIR=/acp-node
 # to pull in the rest of the SDK source (which would break the zero-context
 # fast path `build.py` uses for the `base-image-minimal` target). Adding an
 # npm provider is a catalog edit only; this stage never needs to change.
-COPY openhands-sdk/openhands/sdk/settings/acp_install_catalog.py /tmp/acp_install_catalog.py
+# Toolchain first, catalog second: installing Node.js 24 + the pinned npm
+# does not depend on which providers are selected, so provider-list edits
+# reuse this layer and only re-run the npm install below (whose tarballs
+# come from the npm cache mount).
 RUN set -eux; \
-    ACP_WRAPPER_DIR=/opt/acp-wrappers; \
-    mkdir -p "$ACP_NODE_DIR" "$ACP_WRAPPER_DIR"; \
-    PLAN=$(python3 /tmp/acp_install_catalog.py "$INSTALL_ACP_PROVIDERS") || exit 1; \
-    eval "$PLAN"; \
-    if [ -z "$PACKAGES" ]; then \
-      echo "INSTALL_ACP_PROVIDERS is empty; no ACP providers will be installed"; \
-      exit 0; \
-    fi; \
+    mkdir -p "$ACP_NODE_DIR"; \
     apt-get -o Acquire::Retries=5 update; \
     apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
         ca-certificates curl xz-utils; \
@@ -231,6 +227,18 @@ RUN set -eux; \
     rm -f "$NODE_TARBALL"; \
     "$ACP_NODE_DIR/bin/node" --version; \
     PATH="$ACP_NODE_DIR/bin:$PATH" "$ACP_NODE_DIR/bin/npm" install --global "npm@${NPM_VERSION}"; \
+    mkdir -p /opt/acp-wrappers
+
+COPY openhands-sdk/openhands/sdk/settings/acp_install_catalog.py /tmp/acp_install_catalog.py
+RUN --mount=type=cache,target=/root/.npm \
+    set -eux; \
+    ACP_WRAPPER_DIR=/opt/acp-wrappers; \
+    PLAN=$(python3 /tmp/acp_install_catalog.py "$INSTALL_ACP_PROVIDERS") || exit 1; \
+    eval "$PLAN"; \
+    if [ -z "$PACKAGES" ]; then \
+      echo "INSTALL_ACP_PROVIDERS is empty; no ACP providers will be installed"; \
+      exit 0; \
+    fi; \
     PATH="$ACP_NODE_DIR/bin:$PATH" "$ACP_NODE_DIR/bin/npm" install --global $PACKAGES; \
     for bin in $WRAPPER_BINS; do \
       # Fail the build rather than ship a wrapper that execs a missing target:
@@ -255,12 +263,6 @@ RUN set -eux; \
 ####################################################################################
 FROM ${BASE_IMAGE} AS base-image-minimal
 ARG USERNAME UID GID PORT
-
-
-ARG OPENHANDS_BUILD_GIT_SHA=unknown
-ARG OPENHANDS_BUILD_GIT_REF=unknown
-ENV OPENHANDS_BUILD_GIT_SHA=${OPENHANDS_BUILD_GIT_SHA}
-ENV OPENHANDS_BUILD_GIT_REF=${OPENHANDS_BUILD_GIT_REF}
 
 # Install base packages and create user
 RUN set -eux; \
@@ -355,6 +357,12 @@ RUN mkdir -p /etc/claude-code && \
 
 USER ${USERNAME}
 WORKDIR /
+# Build metadata last: changing these must not invalidate the apt/ACP
+# layers above on every commit.
+ARG OPENHANDS_BUILD_GIT_SHA=unknown
+ARG OPENHANDS_BUILD_GIT_REF=unknown
+ENV OPENHANDS_BUILD_GIT_SHA=${OPENHANDS_BUILD_GIT_SHA}
+ENV OPENHANDS_BUILD_GIT_REF=${OPENHANDS_BUILD_GIT_REF}
 # Locale settings required for libtmux to work with PyInstaller builds
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
