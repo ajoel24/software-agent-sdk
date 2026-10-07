@@ -7,10 +7,9 @@ requires-python = ">=3.12"
 dependencies = [
   "aiosqlite>=0.22.1",
   "alembic>=1.13",
-  "boto3>=1.35.0",
   "docker>=7.1,<8",
   "fastapi>=0.104",
-  "openhands-sdk",
+  "openhands-sdk[boto3]",
   "openhands-tools",
   "openai>=2.33.0,<3",
   "pydantic>=2.13.5",
