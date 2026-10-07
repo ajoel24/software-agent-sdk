@@ -140,7 +140,7 @@ RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
     if [ "$ENABLE_VERTEX" = "1" ]; then EXTRA_FLAGS="--extra vertex"; fi; \
     uv python install 3.13 && \
     uv venv --python-preference only-managed --python 3.13 .venv && \
-    uv sync --frozen --no-editable --no-install-workspace --managed-python --extra boto3 --extra telegram $EXTRA_FLAGS && \
+    uv sync --frozen --no-editable --no-install-workspace --managed-python $EXTRA_FLAGS && \
     readlink -f .venv/bin/python | grep -q '^/agent-server/uv-managed-python/'
 # Sources change often; workspace members install fast on top of warm deps.
 COPY --chown=${USERNAME}:${USERNAME} openhands-sdk ./openhands-sdk
@@ -150,7 +150,7 @@ COPY --chown=${USERNAME}:${USERNAME} openhands-agent-server ./openhands-agent-se
 RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
     EXTRA_FLAGS=""; \
     if [ "$ENABLE_VERTEX" = "1" ]; then EXTRA_FLAGS="--extra vertex"; fi; \
-    uv sync --frozen --no-editable --managed-python --extra boto3 --extra telegram $EXTRA_FLAGS
+    uv sync --frozen --no-editable --managed-python $EXTRA_FLAGS
 
 ####################################################################################
 # Binary Builder (binary mode)
@@ -163,7 +163,7 @@ ARG USERNAME UID GID ENABLE_VERTEX
 RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
     EXTRA_FLAGS=""; \
     if [ "$ENABLE_VERTEX" = "1" ]; then EXTRA_FLAGS="--extra vertex"; fi; \
-    uv sync --frozen --dev --no-editable --extra boto3 --extra telegram $EXTRA_FLAGS
+    uv sync --frozen --dev --no-editable $EXTRA_FLAGS
 
 RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
     uv run pyinstaller openhands-agent-server/openhands/agent_server/agent-server.spec

@@ -7,12 +7,14 @@ requires-python = ">=3.12"
 dependencies = [
   "aiosqlite>=0.22.1",
   "alembic>=1.13",
+  "boto3>=1.35.0",
   "docker>=7.1,<8",
   "fastapi>=0.104",
   "openhands-sdk",
   "openhands-tools",
   "openai>=2.33.0,<3",
   "pydantic>=2.13.5",
+  "python-telegram-bot>=22.0,<23",
   "sqlalchemy>=2",
   "uvicorn>=0.54.0",
   "websockets>=12",
@@ -25,9 +27,6 @@ dependencies = [
 # on the import path. Constrained to the major already resolved in uv.lock so
 # installing the extra cannot force a resolver conflict.
 posthog = ["posthog>=7.60.0,<8"]
-# Telegram bot integration. Optional so the core server runs without the
-# python-telegram-bot dependency on the import path.
-telegram = ["python-telegram-bot>=22.0,<23"]
 
 [project.urls]
 Source = "https://github.com/OpenHands/software-agent-sdk"

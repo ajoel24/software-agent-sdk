@@ -4,7 +4,6 @@ This module defines the HTTP API endpoints for Telegram bot operations.
 Business logic is delegated to telegram_service.py.
 """
 
-import os
 from contextlib import suppress
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -18,6 +17,7 @@ from openhands.agent_server.telegram_config import (
     TELEGRAM_BOT_TOKEN_SECRET_NAME,
     TELEGRAM_WEBHOOK_SECRET_NAME,
     TelegramConfig,
+    TelegramEnv,
     load_telegram_prefs,
     save_telegram_prefs,
 )
@@ -79,15 +79,18 @@ def _parse_allowed_usernames(raw: str | None) -> list[str]:
     return [u.strip().lstrip("@") for u in (raw or "").split(",") if u.strip()]
 
 
-def _config_from_env_or_store(request: Request) -> TelegramConfig | None:
-    """Bot config from env, falling back to persisted prefs + secret.
+def _config_from_env_or_store(
+    request: Request, req: TelegramStartRequest | None = None
+) -> TelegramConfig | None:
+    """Bot config: explicit request fields, then env, then stored values.
 
-    Secret handling mirrors the LLM-settings pattern: token material lives
-    in the SecretsStore (same store LLM credentials use) with an env-var
-    override; the prefs file under ~/.openhands holds non-secret prefs only.
+    Token material lives in the SecretsStore (the same store LLM
+    credentials use); the prefs file under ~/.openhands holds non-secret
+    prefs only.
     """
-    token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    env = TelegramEnv()
     store = get_secrets_store(get_config(request))
+    token = ((req.bot_token if req else None) or env.bot_token).strip()
     if not token:
         stored = store.get_secret(TELEGRAM_BOT_TOKEN_SECRET_NAME)
         token = (stored or "").strip()
@@ -96,16 +99,19 @@ def _config_from_env_or_store(request: Request) -> TelegramConfig | None:
     prefs = load_telegram_prefs()
     return TelegramConfig(
         bot_token=token,
-        webhook_url=os.environ.get("TELEGRAM_WEBHOOK_URL") or prefs.get("webhook_url"),
-        webhook_secret=os.environ.get("TELEGRAM_WEBHOOK_SECRET")
+        webhook_url=(req.webhook_url if req else None)
+        or env.webhook_url
+        or prefs.get("webhook_url"),
+        webhook_secret=env.webhook_secret
         or store.get_secret(TELEGRAM_WEBHOOK_SECRET_NAME),
-        allowed_usernames=_parse_allowed_usernames(
-            os.environ.get("TELEGRAM_ALLOWED_USERNAMES")
-        )
+        allowed_usernames=(req.allowed_usernames if req else None)
+        or _parse_allowed_usernames(env.allowed_usernames)
         or list(prefs.get("allowed_usernames") or []),
-        default_workspace=os.environ.get("TELEGRAM_DEFAULT_WORKSPACE")
+        default_workspace=(req.default_workspace if req else None)
+        or env.default_workspace
         or str(prefs.get("default_workspace") or "/workspace"),
-        agent_profile_name=os.environ.get("TELEGRAM_AGENT_PROFILE")
+        agent_profile_name=(req.agent_profile_name if req else None)
+        or env.agent_profile
         or str(prefs.get("agent_profile_name") or "default"),
     )
 
@@ -177,21 +183,7 @@ async def telegram_status(
 def _resolve_start_config(
     req: TelegramStartRequest, request: Request
 ) -> TelegramConfig | None:
-    """Build the bot config for an explicit start request, if possible."""
-    token = (req.bot_token or os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
-    if token:
-        return TelegramConfig(
-            bot_token=token,
-            webhook_url=req.webhook_url or os.environ.get("TELEGRAM_WEBHOOK_URL"),
-            webhook_secret=os.environ.get("TELEGRAM_WEBHOOK_SECRET"),
-            allowed_usernames=req.allowed_usernames
-            or _parse_allowed_usernames(os.environ.get("TELEGRAM_ALLOWED_USERNAMES")),
-            default_workspace=req.default_workspace,
-            agent_profile_name=req.agent_profile_name
-            or os.environ.get("TELEGRAM_AGENT_PROFILE")
-            or "default",
-        )
-    return _config_from_env_or_store(request)
+    return _config_from_env_or_store(request, req)
 
 
 def _persist_start_config(store, config: TelegramConfig) -> None:

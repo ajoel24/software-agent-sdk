@@ -1,8 +1,8 @@
 /**
  * OpenHands Agent Server TypeScript Client
  *
- * A TypeScript client library for the OpenHands Agent Server API that mirrors
- * the structure and functionality of the Python SDK.
+ * A TypeScript client library for the OpenHands Agent Server API with the
+ * same structure and functionality as the Python SDK.
  */
 
 // Main conversation and workspace classes
@@ -227,11 +227,11 @@ export type {
   ConversationType,
 } from './conversation/base';
 
-// ACP provider registry (mirrors openhands-sdk; see scripts/validate-acp-providers.mjs)
+// ACP provider registry (kept in sync with openhands-sdk; see scripts/validate-acp-providers.mjs)
 export { ACP_PROVIDERS, ACP_SETTINGS_KEYS, getAcpProvider } from './models/acp';
 export type { ACPModelOption, ACPProviderInfo, ACPProviderKey } from './models/acp';
 
-// Agent profile types (mirrors openhands-sdk agent_profile.py + resolver.py)
+// Agent profile types (kept in sync with openhands-sdk agent_profile.py + resolver.py)
 export type {
   AgentKind,
   ACPServerKind,

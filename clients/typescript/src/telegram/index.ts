@@ -12,6 +12,7 @@ export type {
   TelegramChatSession,
 } from './types';
 
+import { TELEGRAM_ROUTES } from './routes';
 import type { TelegramChatSession, TelegramStartRequest, TelegramStatus } from './types';
 
 export interface TelegramClientOptions {
@@ -39,25 +40,25 @@ async function request<T>(
 }
 
 export async function getTelegramStatus(options: TelegramClientOptions): Promise<TelegramStatus> {
-  return request<TelegramStatus>(options, '/telegram/status');
+  return request<TelegramStatus>(options, TELEGRAM_ROUTES.status);
 }
 
 export async function startTelegramBot(
   options: TelegramClientOptions,
   req: TelegramStartRequest
 ): Promise<{ status: string }> {
-  return request(options, '/telegram/start', {
+  return request(options, TELEGRAM_ROUTES.start, {
     method: 'POST',
     body: JSON.stringify(req),
   });
 }
 
 export async function stopTelegramBot(options: TelegramClientOptions): Promise<{ status: string }> {
-  return request(options, '/telegram/stop', { method: 'POST' });
+  return request(options, TELEGRAM_ROUTES.stop, { method: 'POST' });
 }
 
 export async function listTelegramChats(
   options: TelegramClientOptions
 ): Promise<TelegramChatSession[]> {
-  return request<TelegramChatSession[]>(options, '/telegram/chats');
+  return request<TelegramChatSession[]>(options, TELEGRAM_ROUTES.chats);
 }
