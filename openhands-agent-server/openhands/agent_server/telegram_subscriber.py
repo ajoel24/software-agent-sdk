@@ -32,6 +32,7 @@ class _TelegramEventSubscriber(Subscriber[Event]):
         return "".join(self._buffer)
 
     async def __call__(self, event: Event) -> None:
+        from openhands.sdk.event.llm_convertible.action import ActionEvent
         from openhands.sdk.event.llm_convertible.message import MessageEvent
         from openhands.sdk.event.streaming_delta import StreamingDeltaEvent
         from openhands.sdk.llm import content_to_str
@@ -42,17 +43,22 @@ class _TelegramEventSubscriber(Subscriber[Event]):
         elif isinstance(event, MessageEvent):
             if event.source == "agent":
                 text = "\n".join(content_to_str(event.llm_message.content))
+        elif isinstance(event, ActionEvent):
+            if event.source == "agent" and event.tool_name == "finish":
+                message = getattr(event.action, "message", None)
+                if isinstance(message, str) and message.strip():
+                    text = message
         elif isinstance(event, ConversationStateUpdateEvent):
             if event.key == "execution_status" and isinstance(event.value, str):
                 status_value = event.value.lower()
                 if status_value == "error":
                     text = "❌ Conversation error"
-                if status_value in ("idle", "error"):
+                if status_value in ("idle", "error", "finished"):
                     await self._flush()
 
         if not text:
             return
-        is_final = isinstance(event, MessageEvent)
+        is_final = isinstance(event, (MessageEvent, ActionEvent))
         buffered = self._buffered_text
         if buffered and (buffered in text or text in buffered):
             self._buffer = [text if len(text) > len(buffered) else buffered]
