@@ -171,6 +171,42 @@ async def test_secrets_filtered_by_refs(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_chat_message_uses_normal_turn(service):
+    event_service = MagicMock()
+    event_service.subscribe_to_events = AsyncMock(return_value=UUID(int=3))
+    event_service.send_message = AsyncMock()
+    service._conversation_service.get_event_service = AsyncMock(
+        return_value=event_service
+    )
+    service._chat_sessions[1] = tg.TelegramChatSession(
+        chat_id=1, conversation_id=UUID(int=9)
+    )
+
+    await service._handle_chat_message(1, "hey!", service._chat_sessions[1])
+
+    assert service._subscribers[1] == UUID(int=3)
+    msg, run = event_service.send_message.await_args.args
+    assert msg.role == "user" and "hey!" in str(msg.content) and run is True
+    # ask_agent (fork path) must not be used for chat
+    service._conversation_service.ask_agent.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_chat(service):
+    event_service = MagicMock()
+    event_service.unsubscribe_from_events = AsyncMock(return_value=True)
+    service._conversation_service.get_event_service = AsyncMock(
+        return_value=event_service
+    )
+    service._subscribers[1] = UUID(int=3)
+
+    await service._unsubscribe_chat(1, UUID(int=9))
+
+    assert 1 not in service._subscribers
+    event_service.unsubscribe_from_events.assert_awaited_once_with(UUID(int=3))
+
+
+@pytest.mark.asyncio
 async def test_auth_error_hint(service):
     update = _update("hello")
     update.message.chat.send_action = AsyncMock()
