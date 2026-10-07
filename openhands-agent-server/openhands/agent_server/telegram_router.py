@@ -229,9 +229,6 @@ async def telegram_start(
     if existing and existing.is_running():
         return {"status": "already_running", **existing.get_status()}
     if existing:
-        # A previous instance exists but isn't running (e.g. polling died
-        # during start). Shut it down so its updater doesn't leak and spam
-        # polling errors, then replace it below.
         with suppress(Exception):
             await existing.stop()
         _set_telegram_service_state(request, None)
