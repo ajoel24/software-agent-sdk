@@ -95,7 +95,9 @@ OPENCODE_RESPONSES_MODELS: Final[frozenset[str]] = frozenset(
         "grok-4.7",
         "grok-build-0.1",
         "muse-spark-1.2",
+        "muse-spark-1.2-contributor",
         "muse-spark-1.3",
+        "muse-spark-1.3-contributor",
         "muse-spark-1.3-contributor-free",
     }
 )

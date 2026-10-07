@@ -3,6 +3,7 @@ import importlib
 import litellm
 from pydantic import SecretStr
 
+from openhands.sdk.llm.utils.opencode_provider import OPENCODE_MODEL_PREFIX
 from openhands.sdk.llm.utils.verified_models import VERIFIED_MODELS
 from openhands.sdk.logger import get_logger
 
@@ -105,10 +106,11 @@ def _get_litellm_provider_names() -> set[str]:
     return result
 
 
-# Gateway prefixes the SDK routes itself (see ``opencode_provider``) that
-# LiteLLM does not know natively. Listed explicitly so model ids under them
-# bucket under the real provider instead of "other".
-_SDK_KNOWN_PROVIDER_PREFIXES = frozenset({"opencode"})
+# Gateway prefixes the SDK routes itself that LiteLLM does not know
+# natively. Sourced from the owning provider modules (not duplicated
+# strings) so model ids under them bucket under the real provider
+# instead of "other".
+_SDK_KNOWN_PROVIDER_PREFIXES = frozenset({OPENCODE_MODEL_PREFIX.removesuffix("/")})
 
 _LITELLM_PROVIDER_NAMES = _get_litellm_provider_names() | _SDK_KNOWN_PROVIDER_PREFIXES
 

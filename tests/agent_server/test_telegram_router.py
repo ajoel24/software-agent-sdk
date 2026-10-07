@@ -26,7 +26,7 @@ def test_telegram_status_unconfigured(client):
 def test_telegram_start_missing_token(client):
     response = client.post("/telegram/start", json={})
     assert response.status_code == 400
-    assert "bot_token" in response.json()["detail"]
+    assert "bot token" in response.json()["detail"]
 
 
 def test_telegram_stop_unconfigured(client):

@@ -1,5 +1,7 @@
 import asyncio
+import importlib.util
 import os
+import sys
 import tempfile
 import traceback
 import uuid
@@ -292,12 +294,19 @@ async def api_lifespan(api: FastAPI) -> AsyncIterator[None]:
                     config.bash_events_retention_seconds,
                 )
 
+            # Lifespan-owned: the bot singleton lives here, not in a
+            # module global, and is stopped with the app.
+            api.state.telegram_service = None
             try:
                 yield
             finally:
                 session_store = getattr(api.state, "app_backend_session_store", None)
                 if session_store is not None:
                     await session_store.shutdown()
+                telegram_service = getattr(api.state, "telegram_service", None)
+                if telegram_service is not None:
+                    with suppress(Exception):
+                        await telegram_service.stop()
                 await conversation_registry.shutdown()
                 if retention_task is not None:
                     retention_task.cancel()
@@ -418,6 +427,14 @@ def _find_http_exception(exc: BaseExceptionGroup) -> HTTPException | None:
     return None
 
 
+def _telegram_dependency_available() -> bool:
+    """Whether python-telegram-bot is importable (tolerates mocked modules)."""
+    try:
+        return importlib.util.find_spec("telegram") is not None
+    except (ImportError, ValueError):
+        return "telegram" in sys.modules
+
+
 def _add_api_routes(app: FastAPI) -> None:
     """Add all API routes to the FastAPI application."""
     conversation_registry = app.state.conversation_registry
@@ -474,7 +491,11 @@ def _add_api_routes(app: FastAPI) -> None:
     # so it lives under the header-only auth group.
     api_router.include_router(auth_router)
     app.include_router(openai_router, dependencies=[Depends(check_openai_api_key)])
-    app.include_router(telegram_router)
+    # Telegram routes exist only when the integration is installed (the
+    # python-telegram-bot dependency), so /telegram/* can't be reached on
+    # images without Telegram support even if the UI hides the feature.
+    if _telegram_dependency_available():
+        app.include_router(telegram_router)
 
     # Workspace static-file routes get their own auth group that accepts
     # EITHER the X-Session-API-Key header OR the workspace session cookie.

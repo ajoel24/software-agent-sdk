@@ -762,13 +762,9 @@ class LLM(BaseModel, RetryMixin, NonNativeToolCallingMixin):
             if base == "https://api.openai.com" or base == "https://api.openai.com/":
                 d["base_url"] = None  # Let LiteLLM use its default which includes /v1
 
-        # OpenCode Zen gateway: default credentials from the environment.
-        # The model keeps its canonical ``opencode/<id>`` form (translated
-        # to the LiteLLM-routable provider form only at the call boundary);
-        # LiteLLM would otherwise look for OPENAI_API_KEY instead of
-        # OPENCODE_API_KEY. Zen serves each model on exactly one protocol
-        # (see ``opencode_provider``): Responses-protocol models default to
-        # the SDK's Responses-API path unless explicitly overridden.
+        # OpenCode Zen gateway (see ``opencode_provider``): keep the
+        # canonical ``opencode/<id>`` form and default credentials from
+        # OPENCODE_API_KEY; Responses-protocol models use the Responses path.
         if model_val.startswith("opencode/"):
             if not d.get("api_key"):
                 env_key = os.environ.get("OPENCODE_API_KEY")

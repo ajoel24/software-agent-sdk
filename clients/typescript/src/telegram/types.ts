@@ -1,9 +1,4 @@
-/**
- * Telegram bot integration types.
- *
- * Mirrors the Python agent-server's telegram router models.
- * Browser-safe: pure types, no Node.js dependencies.
- */
+/** Telegram bot integration types (mirrors the agent-server router models). */
 
 export type TelegramBotStatus = 'stopped' | 'starting' | 'running' | 'error';
 

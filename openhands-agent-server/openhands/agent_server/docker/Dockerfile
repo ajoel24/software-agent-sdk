@@ -110,7 +110,7 @@ RUN set -eux; \
 # See OpenHands/software-agent-sdk#2761.
 ####################################################################################
 FROM python:3.13-bookworm AS builder
-ARG USERNAME UID GID ENABLE_VERTEX INSTALL_TELEGRAM
+ARG USERNAME UID GID ENABLE_VERTEX
 ENV UV_PROJECT_ENVIRONMENT=/agent-server/.venv
 ENV UV_PYTHON_INSTALL_DIR=/agent-server/uv-managed-python
 # Hardlinks never survive podman cache mounts (different filesystems);
@@ -140,8 +140,7 @@ RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
     if [ "$ENABLE_VERTEX" = "1" ]; then EXTRA_FLAGS="--extra vertex"; fi; \
     uv python install 3.13 && \
     uv venv --python-preference only-managed --python 3.13 .venv && \
-    if [ "$INSTALL_TELEGRAM" = "1" ]; then EXTRA_FLAGS="$EXTRA_FLAGS --extra telegram"; fi; \
-    uv sync --frozen --no-editable --no-install-workspace --managed-python --extra boto3 $EXTRA_FLAGS && \
+    uv sync --frozen --no-editable --no-install-workspace --managed-python --extra boto3 --extra telegram $EXTRA_FLAGS && \
     readlink -f .venv/bin/python | grep -q '^/agent-server/uv-managed-python/'
 # Sources change often; workspace members install fast on top of warm deps.
 COPY --chown=${USERNAME}:${USERNAME} openhands-sdk ./openhands-sdk
@@ -151,22 +150,20 @@ COPY --chown=${USERNAME}:${USERNAME} openhands-agent-server ./openhands-agent-se
 RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
     EXTRA_FLAGS=""; \
     if [ "$ENABLE_VERTEX" = "1" ]; then EXTRA_FLAGS="--extra vertex"; fi; \
-    if [ "$INSTALL_TELEGRAM" = "1" ]; then EXTRA_FLAGS="$EXTRA_FLAGS --extra telegram"; fi; \
-    uv sync --frozen --no-editable --managed-python --extra boto3 $EXTRA_FLAGS
+    uv sync --frozen --no-editable --managed-python --extra boto3 --extra telegram $EXTRA_FLAGS
 
 ####################################################################################
 # Binary Builder (binary mode)
 # We run pyinstaller here to produce openhands-agent-server
 ####################################################################################
 FROM builder AS binary-builder
-ARG USERNAME UID GID ENABLE_VERTEX INSTALL_TELEGRAM
+ARG USERNAME UID GID ENABLE_VERTEX
 
 # We need --dev for pyinstaller
 RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
     EXTRA_FLAGS=""; \
     if [ "$ENABLE_VERTEX" = "1" ]; then EXTRA_FLAGS="--extra vertex"; fi; \
-    if [ "$INSTALL_TELEGRAM" = "1" ]; then EXTRA_FLAGS="$EXTRA_FLAGS --extra telegram"; fi; \
-    uv sync --frozen --dev --no-editable --extra boto3 $EXTRA_FLAGS
+    uv sync --frozen --dev --no-editable --extra boto3 --extra telegram $EXTRA_FLAGS
 
 RUN --mount=type=cache,target=/home/${USERNAME}/.cache,uid=${UID},gid=${GID} \
     uv run pyinstaller openhands-agent-server/openhands/agent_server/agent-server.spec
@@ -588,12 +585,12 @@ EXPOSE ${PORT}
 # Local dev and debugging mode: copy source + venv from builder
 ############################
 FROM base-image AS source
-ARG USERNAME INSTALL_TELEGRAM
+ARG USERNAME
 COPY --chown=${USERNAME}:${USERNAME} --from=builder /agent-server /agent-server
 ENTRYPOINT ["tini", "--", "/agent-server/.venv/bin/python", "-m", "openhands.agent_server"]
 
 FROM base-image-minimal AS source-minimal
-ARG USERNAME INSTALL_TELEGRAM
+ARG USERNAME
 COPY --chown=${USERNAME}:${USERNAME} --from=builder /agent-server /agent-server
 ENTRYPOINT ["tini", "--", "/agent-server/.venv/bin/python", "-m", "openhands.agent_server"]
 
