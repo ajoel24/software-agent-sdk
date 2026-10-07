@@ -242,6 +242,38 @@ async def test_typing_starts_on_message_and_stops_on_idle(service):
 
 
 @pytest.mark.asyncio
+async def test_streaming_turn_forwarded_whole_once():
+    from openhands.sdk import Message as _Message, TextContent as _TextContent
+    from openhands.sdk.event.conversation_state import (
+        ConversationStateUpdateEvent,
+    )
+    from openhands.sdk.event.llm_convertible.message import MessageEvent
+    from openhands.sdk.event.streaming_delta import StreamingDeltaEvent
+
+    sent: list[str] = []
+
+    async def fake_send(chat_id: int, text: str) -> None:
+        sent.append(text)
+
+    sub = tg._TelegramEventSubscriber(chat_id=1, send_message=fake_send)
+    full = '```python\nprint("Hello, World!")\n```'
+    for chunk in [full[:10], full[10:20], full[20:]]:
+        await sub(StreamingDeltaEvent(content=chunk))
+    # Nothing sent mid-stream...
+    assert sent == []
+    await sub(
+        MessageEvent(
+            source="agent",
+            llm_message=_Message(role="assistant", content=[_TextContent(text=full)]),
+        )
+    )
+    # ...and the run-end flush delivers exactly one whole message.
+    assert sent == []
+    await sub(ConversationStateUpdateEvent(key="execution_status", value="idle"))
+    assert sent == [full]
+
+
+@pytest.mark.asyncio
 async def test_concurrent_first_messages_create_one_conversation(service):
     import asyncio as _asyncio
 
