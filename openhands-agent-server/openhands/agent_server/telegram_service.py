@@ -7,129 +7,29 @@ conversations, and streams agent responses back to Telegram users.
 from __future__ import annotations
 
 import asyncio
-import json
-import os
 from collections import deque
-from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from openhands.agent_server.conversation_service import ConversationService
 from openhands.agent_server.models import StartConversationRequest
-from openhands.agent_server.pub_sub import Subscriber
-from openhands.sdk.event import Event
-from openhands.sdk.event.conversation_state import ConversationStateUpdateEvent
+from openhands.agent_server.telegram_config import (
+    TelegramChatSession,
+    TelegramConfig,
+)
+from openhands.agent_server.telegram_subscriber import _TelegramEventSubscriber
 from openhands.sdk.logger import get_logger
 
 
 logger = get_logger(__name__)
 
-
-class _TelegramEventSubscriber(Subscriber[Event]):
-    """Forwards conversation events to a Telegram chat."""
-
-    receives_streaming_deltas = True
-
-    def __init__(
-        self,
-        chat_id: int,
-        send_message: Callable[[int, str], Awaitable[None]],
-    ) -> None:
-        self.chat_id = chat_id
-        self._send = send_message
-        self._buffer: list[str] = []
-
-    @property
-    def _buffered_text(self) -> str:
-        return "".join(self._buffer)
-
-    async def __call__(self, event: Event) -> None:
-        from openhands.sdk.event.llm_convertible.message import MessageEvent
-        from openhands.sdk.event.streaming_delta import StreamingDeltaEvent
-        from openhands.sdk.llm import content_to_str
-
-        text: str | None = None
-        if isinstance(event, StreamingDeltaEvent):
-            text = event.content
-        elif isinstance(event, MessageEvent):
-            if event.source == "agent":
-                text = "\n".join(content_to_str(event.llm_message.content))
-        elif isinstance(event, ConversationStateUpdateEvent):
-            # value arrives serialized: plain string or str-enum member.
-            if event.key == "execution_status" and isinstance(event.value, str):
-                status_value = event.value.lower()
-                if status_value == "error":
-                    text = "❌ Conversation error"
-                if status_value in ("idle", "error"):
-                    await self._flush()
-
-        if not text:
-            return
-        # Streaming deltas accumulate silently; each complete agent
-        # MessageEvent flushes immediately so answers go out the moment
-        # they're done instead of waiting on run-end state propagation.
-        # The final event usually repeats the streamed full text, so
-        # collapse overlaps instead of duplicating. Flushing only whole
-        # messages keeps markdown (e.g. code fences) intact.
-        is_final = isinstance(event, MessageEvent)
-        buffered = self._buffered_text
-        if buffered and (buffered in text or text in buffered):
-            self._buffer = [text if len(text) > len(buffered) else buffered]
-        elif text != buffered:
-            self._buffer.append(text)
-        if is_final or len(self._buffered_text) > 3500:
-            await self._flush()
-
-    async def flush(self) -> None:
-        """Send the aggregated turn as one message, if any."""
-        await self._flush()
-
-    async def _flush(self) -> None:
-        if not self._buffer:
-            return
-        msg = self._buffered_text
-        self._buffer.clear()
-        if len(msg) > 4000:
-            msg = msg[:3990] + "\n... (truncated)"
-        try:
-            await self._send(self.chat_id, msg)
-        except Exception as exc:
-            logger.warning(f"Failed to send Telegram message: {exc}")
-
-    async def close(self) -> None:
-        await self._flush()
-
-
-@dataclass
-class TelegramChatSession:
-    """Tracks the link between a Telegram chat and an OpenHands conversation."""
-
-    chat_id: int
-    chat_title: str | None = None
-    chat_username: str | None = None
-    conversation_id: UUID | None = None
-    profile_name: str | None = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    last_activity: datetime = field(default_factory=lambda: datetime.now(UTC))
-    message_count: int = 0
-    status: str = "idle"
-
-
-@dataclass
-class TelegramConfig:
-    """Configuration for the Telegram bot."""
-
-    bot_token: str
-    webhook_url: str | None = None
-    webhook_secret: str | None = None
-    allowed_usernames: list[str] = field(default_factory=list)
-    default_workspace: str = "/workspace"
-    agent_profile_name: str = "default"
-    max_concurrent_chats: int = 10
+__all__ = [
+    "TelegramBotService",
+    "TelegramChatSession",
+    "TelegramConfig",
+]
 
 
 class TelegramBotService:
@@ -228,6 +128,10 @@ class TelegramBotService:
                 await self._app.shutdown()
             self._started = False
         logger.info("Telegram bot stopped")
+
+    def get_chat_sessions(self) -> list[TelegramChatSession]:
+        """Snapshot of active chat sessions (router serializes these)."""
+        return list(self._chat_sessions.values())
 
     def is_running(self) -> bool:
         return self._started
@@ -507,49 +411,3 @@ class TelegramBotService:
         if user is None:
             return False
         return user.username in self.config.allowed_usernames
-
-
-TELEGRAM_BOT_TOKEN_SECRET_NAME = "telegram_bot_token"
-TELEGRAM_WEBHOOK_SECRET_NAME = "telegram_webhook_secret"
-
-
-def _telegram_prefs_path() -> Path:
-    """Location of the non-secret bot prefs (never holds token material)."""
-    override = os.environ.get("TELEGRAM_CONFIG_FILE")
-    if override:
-        return Path(override)
-    return Path.home() / ".openhands" / "telegram.json"
-
-
-def save_telegram_prefs(config: TelegramConfig) -> None:
-    """Persist non-secret bot prefs. Secrets go to the SecretsStore."""
-    path = _telegram_prefs_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "webhook_url": config.webhook_url,
-        "allowed_usernames": config.allowed_usernames,
-        "default_workspace": config.default_workspace,
-        "agent_profile_name": config.agent_profile_name,
-    }
-    path.write_text(json.dumps(payload, indent=2))
-
-
-def load_telegram_prefs() -> dict[str, Any]:
-    """Load persisted non-secret bot prefs, if any."""
-    try:
-        data = json.loads(_telegram_prefs_path().read_text())
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-_telegram_service: TelegramBotService | None = None
-
-
-def _get_telegram_service() -> TelegramBotService | None:
-    return _telegram_service
-
-
-def _set_telegram_service(service: TelegramBotService | None) -> None:
-    global _telegram_service
-    _telegram_service = service

@@ -36,13 +36,11 @@ def profile_store(tmp_path, monkeypatch):
 
 @pytest.fixture
 def service(profile_store):
-    tg._set_telegram_service(None)
     svc = tg.TelegramBotService(
         tg.TelegramConfig(bot_token="t"),
         MagicMock(),
     )
     yield svc
-    tg._set_telegram_service(None)
 
 
 def _update(text="/new", chat_id=1):
@@ -89,15 +87,11 @@ async def test_configured_name_missing_uses_single_available(tmp_path, monkeypat
         "openhands.agent_server.persistence.get_agent_profile_store",
         lambda: solo_store,
     )
-    tg._set_telegram_service(None)
     svc = tg.TelegramBotService(
         tg.TelegramConfig(bot_token="t", agent_profile_name="ghost"),
         MagicMock(),
     )
-    try:
-        assert svc._resolve_profile(None).name == "solo"
-    finally:
-        tg._set_telegram_service(None)
+    assert svc._resolve_profile(None).name == "solo"
 
 
 @pytest.mark.asyncio
@@ -135,18 +129,14 @@ async def test_secrets_forwarded_when_refs_open(tmp_path):
 
     store = FileSecretsStore(persistence_dir=tmp_path / "secrets")
     store.set_secret("MY_KEY", "s3cret", "test key")
-    tg._set_telegram_service(None)
     svc = tg.TelegramBotService(
         tg.TelegramConfig(bot_token="t"), MagicMock(), secrets_store=store
     )
-    try:
-        profile = OpenHandsAgentProfile(name="default", llm_profile_ref="x")
-        assert profile.secret_refs is None
-        forwarded = svc._conversation_secrets(profile)
-        assert set(forwarded) == {"MY_KEY"}
-        assert forwarded["MY_KEY"].get_value() == "s3cret"
-    finally:
-        tg._set_telegram_service(None)
+    profile = OpenHandsAgentProfile(name="default", llm_profile_ref="x")
+    assert profile.secret_refs is None
+    forwarded = svc._conversation_secrets(profile)
+    assert set(forwarded) == {"MY_KEY"}
+    assert forwarded["MY_KEY"].get_value() == "s3cret"
 
 
 @pytest.mark.asyncio
@@ -156,18 +146,14 @@ async def test_secrets_filtered_by_refs(tmp_path):
     store = FileSecretsStore(persistence_dir=tmp_path / "secrets")
     store.set_secret("MY_KEY", "s3cret")
     store.set_secret("OTHER", "nope")
-    tg._set_telegram_service(None)
     svc = tg.TelegramBotService(
         tg.TelegramConfig(bot_token="t"), MagicMock(), secrets_store=store
     )
-    try:
-        profile = OpenHandsAgentProfile(
-            name="default", llm_profile_ref="x", secret_refs=["MY_KEY"]
-        )
-        forwarded = svc._conversation_secrets(profile)
-        assert set(forwarded) == {"MY_KEY"}
-    finally:
-        tg._set_telegram_service(None)
+    profile = OpenHandsAgentProfile(
+        name="default", llm_profile_ref="x", secret_refs=["MY_KEY"]
+    )
+    forwarded = svc._conversation_secrets(profile)
+    assert set(forwarded) == {"MY_KEY"}
 
 
 @pytest.mark.asyncio
@@ -344,15 +330,11 @@ async def test_default_falls_back_to_single_profile(tmp_path, monkeypatch):
         "openhands.agent_server.persistence.get_agent_profile_store",
         lambda: solo_store,
     )
-    tg._set_telegram_service(None)
     svc = tg.TelegramBotService(tg.TelegramConfig(bot_token="t"), MagicMock())
-    try:
-        update = _update("/new")
-        await svc._cmd_new(update, MagicMock())
-        assert svc._chat_sessions[1].profile_name == "solo"
-        await_call = update.message.reply_text.await_args
-        assert await_call is not None
-        reply = await_call.args[0]
-        assert "profile: solo" in reply
-    finally:
-        tg._set_telegram_service(None)
+    update = _update("/new")
+    await svc._cmd_new(update, MagicMock())
+    assert svc._chat_sessions[1].profile_name == "solo"
+    await_call = update.message.reply_text.await_args
+    assert await_call is not None
+    reply = await_call.args[0]
+    assert "profile: solo" in reply

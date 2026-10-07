@@ -98,7 +98,9 @@ VERIFIED_OPENCODE_MODELS = [
     "claude-sonnet-5",
     "claude-haiku-4-5",
     "muse-spark-1.3",
+    "muse-spark-1.3-contributor",
     "muse-spark-1.2",
+    "muse-spark-1.2-contributor",
 ]
 
 # Nemotron 3.5 and 3.

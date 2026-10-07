@@ -5,9 +5,8 @@ import json
 import pytest
 
 from openhands.agent_server.persistence.store import FileSecretsStore
-from openhands.agent_server.telegram_service import (
+from openhands.agent_server.telegram_config import (
     TelegramConfig,
-    _set_telegram_service,
     load_telegram_prefs,
     save_telegram_prefs,
 )
@@ -18,9 +17,7 @@ def prefs_file(tmp_path, monkeypatch):
     path = tmp_path / "telegram.json"
     monkeypatch.setenv("TELEGRAM_CONFIG_FILE", str(path))
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
-    _set_telegram_service(None)
-    yield path
-    _set_telegram_service(None)
+    return path
 
 
 @pytest.fixture
