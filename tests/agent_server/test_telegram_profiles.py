@@ -2,6 +2,7 @@
 
 import sys
 from types import ModuleType
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
@@ -12,15 +13,8 @@ from openhands.sdk.profiles.agent_profile_store import AgentProfileStore
 
 
 def _stub_telegram_lib():
-    telegram = ModuleType("telegram")
-    telegram.Update = MagicMock
-    ext = ModuleType("telegram.ext")
-    ext.Application = MagicMock()
-    ext.CommandHandler = MagicMock()
-    ext.MessageHandler = MagicMock()
-    ext.filters = MagicMock()
-    sys.modules["telegram"] = telegram
-    sys.modules["telegram.ext"] = ext
+    sys.modules["telegram"] = cast(ModuleType, MagicMock())
+    sys.modules["telegram.ext"] = cast(ModuleType, MagicMock())
 
 
 _stub_telegram_lib()
@@ -69,7 +63,9 @@ async def test_new_defaults_to_default_profile(service, profile_store):
     session = service._chat_sessions[1]
     assert session.profile_name == "default"
     assert session.conversation_id is None
-    reply = update.message.reply_text.await_args.args[0]
+    await_call = update.message.reply_text.await_args
+    assert await_call is not None
+    reply = await_call.args[0]
     assert "profile: default" in reply
 
 
@@ -79,14 +75,14 @@ async def test_new_with_named_profile(service):
     await service._cmd_new(update, MagicMock())
 
     assert service._chat_sessions[1].profile_name == "coder"
-    reply = update.message.reply_text.await_args.args[0]
+    await_call = update.message.reply_text.await_args
+    assert await_call is not None
+    reply = await_call.args[0]
     assert "profile: coder" in reply
 
 
 @pytest.mark.asyncio
-async def test_configured_name_missing_uses_single_available(
-    tmp_path, monkeypatch
-):
+async def test_configured_name_missing_uses_single_available(tmp_path, monkeypatch):
     solo_store = AgentProfileStore(base_dir=tmp_path / "solo2")
     solo_store.save(OpenHandsAgentProfile(name="solo", llm_profile_ref="x"))
     monkeypatch.setattr(
@@ -110,7 +106,9 @@ async def test_new_unknown_profile_rejected(service):
     await service._cmd_new(update, MagicMock())
 
     assert 1 not in service._chat_sessions
-    reply = update.message.reply_text.await_args.args[0]
+    await_call = update.message.reply_text.await_args
+    assert await_call is not None
+    reply = await_call.args[0]
     assert reply.startswith("⛔")
 
 
@@ -125,7 +123,9 @@ async def test_create_conversation_passes_profile_id(service, profile_store):
     result = await service._create_conversation(1, "coder")
 
     assert result == {"id": info.id}
-    req = service._conversation_service.start_conversation.await_args.args[0]
+    start_call = service._conversation_service.start_conversation.await_args
+    assert start_call is not None
+    req = start_call.args[0]
     assert req.agent_profile_id == profile_store.load("coder").id
 
 
@@ -185,8 +185,11 @@ async def test_chat_message_uses_normal_turn(service):
     await service._handle_chat_message(1, "hey!", service._chat_sessions[1])
 
     assert service._subscribers[1] == UUID(int=3)
-    msg, run = event_service.send_message.await_args.args
-    assert msg.role == "user" and "hey!" in str(msg.content) and run is True
+    send_call = event_service.send_message.await_args
+    assert send_call is not None
+    msg = send_call.args[0]
+    assert msg.role == "user" and "hey!" in str(msg.content)
+    assert send_call.kwargs.get("run") is True
     # ask_agent (fork path) must not be used for chat
     service._conversation_service.ask_agent.assert_not_called()
 
@@ -216,7 +219,9 @@ async def test_auth_error_hint(service):
 
     service._handle_chat_message = fake_handle  # type: ignore[method-assign]
     await service._on_message(update, MagicMock())
-    reply = update.message.reply_text.await_args.args[0]
+    await_call = update.message.reply_text.await_args
+    assert await_call is not None
+    reply = await_call.args[0]
     assert "Secrets" in reply
     assert service._chat_sessions[1].status == "error"
 
@@ -243,7 +248,9 @@ async def test_default_falls_back_to_single_profile(tmp_path, monkeypatch):
         update = _update("/new")
         await svc._cmd_new(update, MagicMock())
         assert svc._chat_sessions[1].profile_name == "solo"
-        reply = update.message.reply_text.await_args.args[0]
+        await_call = update.message.reply_text.await_args
+        assert await_call is not None
+        reply = await_call.args[0]
         assert "profile: solo" in reply
     finally:
         tg._set_telegram_service(None)

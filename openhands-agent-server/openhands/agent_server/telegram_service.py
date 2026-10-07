@@ -264,6 +264,8 @@ class TelegramBotService:
         Mirrors the server's own scoping: ``secret_refs=None`` exposes all
         stored secrets, otherwise only the listed names.
         """
+        from pydantic import SecretStr
+
         from openhands.agent_server.persistence import get_secrets_store
         from openhands.sdk.secret.secrets import StaticSecret
 
@@ -284,7 +286,7 @@ class TelegramBotService:
                 logger.warning(f"Could not read secret for Telegram: {exc}")
                 continue
             if value:
-                result[secret_name] = StaticSecret(value=value)
+                result[secret_name] = StaticSecret(value=SecretStr(value))
         return result
 
     async def _cmd_new(self, update, _context) -> None:
@@ -365,7 +367,7 @@ class TelegramBotService:
 
         conv_id = session.conversation_id
         assert conv_id is not None
-        from openhands.sdk import Message
+        from openhands.sdk import Message, TextContent
 
         event_service = await self._conversation_service.get_event_service(conv_id)
         if event_service is None:
@@ -382,7 +384,9 @@ class TelegramBotService:
 
         # Normal turn on the shared conversation (visible in the UI),
         # not ask_agent: that forks a side session most agents can't fork.
-        await event_service.send_message(Message(role="user", content=text), True)
+        await event_service.send_message(
+            Message(role="user", content=[TextContent(text=text)]), run=True
+        )
         session.status = "idle"
 
     async def _unsubscribe_chat(self, chat_id: int, conv_id: UUID | None) -> None:
@@ -390,9 +394,7 @@ class TelegramBotService:
         if sub_id is None or conv_id is None:
             return
         try:
-            event_service = await self._conversation_service.get_event_service(
-                conv_id
-            )
+            event_service = await self._conversation_service.get_event_service(conv_id)
             if event_service is not None:
                 await event_service.unsubscribe_from_events(sub_id)
         except Exception as exc:
