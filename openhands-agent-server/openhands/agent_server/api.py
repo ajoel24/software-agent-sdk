@@ -294,8 +294,6 @@ async def api_lifespan(api: FastAPI) -> AsyncIterator[None]:
                     config.bash_events_retention_seconds,
                 )
 
-            # Lifespan-owned: the bot singleton lives here, not in a
-            # module global, and is stopped with the app.
             api.state.telegram_service = None
             try:
                 yield

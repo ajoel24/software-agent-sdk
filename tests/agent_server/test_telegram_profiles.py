@@ -116,7 +116,7 @@ async def test_create_conversation_passes_profile_id(service, profile_store):
 
     result = await service._create_conversation(1, "coder")
 
-    assert result == {"id": info.id}
+    assert result == info.id
     start_call = service._conversation_service.start_conversation.await_args
     assert start_call is not None
     req = start_call.args[0]

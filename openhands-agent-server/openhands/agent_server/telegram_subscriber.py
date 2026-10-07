@@ -43,7 +43,6 @@ class _TelegramEventSubscriber(Subscriber[Event]):
             if event.source == "agent":
                 text = "\n".join(content_to_str(event.llm_message.content))
         elif isinstance(event, ConversationStateUpdateEvent):
-            # value arrives serialized: plain string or str-enum member.
             if event.key == "execution_status" and isinstance(event.value, str):
                 status_value = event.value.lower()
                 if status_value == "error":
@@ -53,12 +52,6 @@ class _TelegramEventSubscriber(Subscriber[Event]):
 
         if not text:
             return
-        # Streaming deltas accumulate silently; each complete agent
-        # MessageEvent flushes immediately so answers go out the moment
-        # they're done instead of waiting on run-end state propagation.
-        # The final event usually repeats the streamed full text, so
-        # collapse overlaps instead of duplicating. Flushing only whole
-        # messages keeps markdown (e.g. code fences) intact.
         is_final = isinstance(event, MessageEvent)
         buffered = self._buffered_text
         if buffered and (buffered in text or text in buffered):

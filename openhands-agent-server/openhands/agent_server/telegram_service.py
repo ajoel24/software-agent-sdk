@@ -1,8 +1,4 @@
-"""Telegram bot service for the OpenHands Agent Server.
-
-Manages the Telegram bot lifecycle, maps Telegram chats to OpenHands
-conversations, and streams agent responses back to Telegram users.
-"""
+"""Telegram bot service for the OpenHands Agent Server."""
 
 from __future__ import annotations
 
@@ -47,13 +43,9 @@ class TelegramBotService:
         self._chat_sessions: dict[int, TelegramChatSession] = {}
         self._subscribers: dict[int, UUID] = {}
         self._lock = asyncio.Lock()
-        # Recently processed Telegram update ids. Telegram redelivers
-        # updates on polling races; without this, one /new or message
-        # executes (and replies) multiple times.
         self._seen_updates: deque[int] = deque(maxlen=1000)
         self._started = False
 
-        # Lazy import: telegram is an optional dependency.
         try:
             from telegram import Update  # noqa: F401
             from telegram.ext import Application  # noqa: F401
@@ -65,7 +57,6 @@ class TelegramBotService:
 
         self._Update = Update
         self._app = Application.builder().token(config.bot_token).build()
-
         self._register_handlers()
 
     def _register_handlers(self) -> None:
@@ -109,9 +100,6 @@ class TelegramBotService:
                     await self._unsubscribe_chat(chat_id, session.conversation_id)
 
         assert self._app is not None
-        # PTB raises RuntimeError when stopping an app that never reached
-        # running state (e.g. polling failed during start). Stop best-effort
-        # so /stop always converges instead of 500ing.
         try:
             if self.config.webhook_url:
                 with suppress(Exception):
@@ -130,7 +118,6 @@ class TelegramBotService:
         logger.info("Telegram bot stopped")
 
     def get_chat_sessions(self) -> list[TelegramChatSession]:
-        """Snapshot of active chat sessions (router serializes these)."""
         return list(self._chat_sessions.values())
 
     def is_running(self) -> bool:
@@ -151,7 +138,7 @@ class TelegramBotService:
         update = self._Update.de_json(payload, self._app.bot)
         await self._app.process_update(update)
 
-    async def _cmd_start(self, update, _context) -> None:
+    async def _cmd_start(self, update: Any, _context: Any) -> None:
         if self._is_duplicate_update(update):
             return
         user = update.effective_user
@@ -170,10 +157,10 @@ class TelegramBotService:
             "/help — Show this help"
         )
 
-    async def _cmd_help(self, update, _context) -> None:
+    async def _cmd_help(self, update: Any, _context: Any) -> None:
         await self._cmd_start(update, _context)
 
-    async def _cmd_status(self, update, _context) -> None:
+    async def _cmd_status(self, update: Any, _context: Any) -> None:
         if self._is_duplicate_update(update):
             return
         status = self.get_status()
@@ -183,12 +170,7 @@ class TelegramBotService:
             f"Total messages: {status['total_messages']}"
         )
 
-    def _resolve_profile(self, profile_name: str | None):
-        """Profile by name (or the configured default) from the store.
-
-        Falls back to the only available profile when the requested name
-        doesn't exist, so a missing `default` never blocks chatting.
-        """
+    def _resolve_profile(self, profile_name: str | None) -> Any:
         from openhands.agent_server.persistence import get_agent_profile_store
 
         store = get_agent_profile_store()
@@ -201,12 +183,7 @@ class TelegramBotService:
                 return store.load(available[0])
             raise
 
-    def _conversation_secrets(self, profile) -> dict[str, Any]:
-        """User secrets the profile is allowed to receive.
-
-        Mirrors the server's own scoping: ``secret_refs=None`` exposes all
-        stored secrets, otherwise only the listed names.
-        """
+    def _conversation_secrets(self, profile: Any) -> dict[str, Any]:
         from pydantic import SecretStr
 
         from openhands.agent_server.persistence import get_secrets_store
@@ -232,7 +209,21 @@ class TelegramBotService:
                 result[secret_name] = StaticSecret(value=SecretStr(value))
         return result
 
-    async def _cmd_new(self, update, _context) -> None:
+    def _new_session(
+        self,
+        chat_id: int,
+        title: str | None,
+        username: str | None,
+        profile_name: str | None = None,
+    ) -> TelegramChatSession:
+        return TelegramChatSession(
+            chat_id=chat_id,
+            chat_title=title,
+            chat_username=username,
+            profile_name=profile_name,
+        )
+
+    async def _cmd_new(self, update: Any, _context: Any) -> None:
         if self._is_duplicate_update(update):
             return
         chat_id = update.effective_chat.id
@@ -244,22 +235,20 @@ class TelegramBotService:
             await update.message.reply_text(f"⛔ {exc}")
             return
         async with self._lock:
-            if chat_id in self._chat_sessions:
-                old = self._chat_sessions[chat_id]
-                if old.conversation_id and chat_id in self._subscribers:
-                    await self._unsubscribe_chat(chat_id, old.conversation_id)
-            self._chat_sessions[chat_id] = TelegramChatSession(
-                chat_id=chat_id,
-                chat_title=update.effective_chat.title,
-                chat_username=update.effective_user.username,
-                profile_name=profile.name,
+            old = self._chat_sessions.get(chat_id)
+            if old and old.conversation_id and chat_id in self._subscribers:
+                await self._unsubscribe_chat(chat_id, old.conversation_id)
+            self._chat_sessions[chat_id] = self._new_session(
+                chat_id,
+                update.effective_chat.title,
+                update.effective_user.username,
+                profile.name,
             )
-        used = profile.name
         await update.message.reply_text(
-            f"🆕 New conversation started (profile: {used}). Send me a message!"
+            f"🆕 New conversation started (profile: {profile.name}). Send me a message!"
         )
 
-    async def _cmd_stop(self, update, _context) -> None:
+    async def _cmd_stop(self, update: Any, _context: Any) -> None:
         if self._is_duplicate_update(update):
             return
         chat_id = update.effective_chat.id
@@ -271,7 +260,7 @@ class TelegramBotService:
                     await self._unsubscribe_chat(chat_id, session.conversation_id)
         await update.message.reply_text("🛑 Conversation stopped.")
 
-    async def _on_message(self, update, _context) -> None:
+    async def _on_message(self, update: Any, _context: Any) -> None:
         user = update.effective_user
         if not self._is_allowed(user):
             return
@@ -280,13 +269,12 @@ class TelegramBotService:
         chat_id = update.effective_chat.id
         text = update.message.text
         async with self._lock:
-            if chat_id not in self._chat_sessions:
-                self._chat_sessions[chat_id] = TelegramChatSession(
-                    chat_id=chat_id,
-                    chat_title=update.effective_chat.title,
-                    chat_username=user.username,
+            session = self._chat_sessions.get(chat_id)
+            if session is None:
+                session = self._new_session(
+                    chat_id, update.effective_chat.title, user.username
                 )
-            session = self._chat_sessions[chat_id]
+                self._chat_sessions[chat_id] = session
             session.message_count += 1
             session.last_activity = datetime.now(UTC)
             session.status = "running"
@@ -304,12 +292,7 @@ class TelegramBotService:
             await update.message.reply_text(f"❌ Error: {detail}")
             session.status = "error"
 
-    def _is_duplicate_update(self, update) -> bool:
-        """True when this Telegram update was already processed.
-
-        The check-and-record is synchronous (no awaits), so concurrent
-        handler tasks can't both slip through for the same update.
-        """
+    def _is_duplicate_update(self, update: Any) -> bool:
         update_id = getattr(update, "update_id", None)
         if update_id is None:
             return False
@@ -321,17 +304,15 @@ class TelegramBotService:
     async def _handle_chat_message(
         self, chat_id: int, text: str, session: TelegramChatSession
     ) -> None:
-        # Guard the lazy first-message creation: duplicate deliveries of
-        # the same message race here while conversation_id is still None.
         async with self._lock:
             if session.conversation_id is None:
-                conv = await self._create_conversation(chat_id, session.profile_name)
-                if conv is None:
+                conv_id = await self._create_conversation(chat_id, session.profile_name)
+                if conv_id is None:
                     await self._send_message(
                         chat_id, "❌ Failed to create conversation"
                     )
                     return
-                session.conversation_id = conv["id"]
+                session.conversation_id = conv_id
 
         conv_id = session.conversation_id
         assert conv_id is not None
@@ -349,9 +330,6 @@ class TelegramBotService:
             self._subscribers[chat_id] = await event_service.subscribe_to_events(
                 subscriber
             )
-
-        # Normal turn on the shared conversation (visible in the UI),
-        # not ask_agent: that forks a side session most agents can't fork.
         await event_service.send_message(
             Message(role="user", content=[TextContent(text=text)]), run=True
         )
@@ -370,7 +348,7 @@ class TelegramBotService:
 
     async def _create_conversation(
         self, chat_id: int, profile_name: str | None = None
-    ) -> dict[str, Any] | None:
+    ) -> UUID | None:
         from openhands.sdk.workspace import LocalWorkspace
 
         try:
@@ -382,7 +360,7 @@ class TelegramBotService:
                 secrets=self._conversation_secrets(profile),
             )
             info, _ = await self._conversation_service.start_conversation(req)
-            return {"id": info.id}
+            return info.id
         except FileNotFoundError as exc:
             logger.error(f"No agent profile for Telegram chat {chat_id}: {exc}")
             await self._send_message(
@@ -398,14 +376,11 @@ class TelegramBotService:
         if not self._app or not self._app.bot:
             return
         try:
-            await self._app.bot.send_message(
-                chat_id=chat_id,
-                text=text[:4096],
-            )
+            await self._app.bot.send_message(chat_id=chat_id, text=text[:4096])
         except Exception as exc:
             logger.warning(f"Failed to send Telegram message: {exc}")
 
-    def _is_allowed(self, user) -> bool:
+    def _is_allowed(self, user: Any) -> bool:
         if not self.config.allowed_usernames:
             return True
         if user is None:
