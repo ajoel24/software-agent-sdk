@@ -232,6 +232,29 @@ async def test_streaming_turn_forwarded_whole_once():
 
 
 @pytest.mark.asyncio
+async def test_finish_action_flushes_immediately():
+    from types import SimpleNamespace
+
+    from openhands.sdk.event.llm_convertible.action import ActionEvent
+
+    sent: list[str] = []
+
+    async def fake_send(chat_id: int, text: str) -> None:
+        sent.append(text)
+
+    sub = tg._TelegramEventSubscriber(chat_id=1, send_message=fake_send)
+    full = 'print("hi")'
+    await sub(
+        ActionEvent.model_construct(
+            source="agent",
+            tool_name="finish",
+            action=SimpleNamespace(message=full),
+        )
+    )
+    assert sent == [full]
+
+
+@pytest.mark.asyncio
 async def test_concurrent_first_messages_create_one_conversation(service):
     import asyncio as _asyncio
 
