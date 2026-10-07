@@ -187,11 +187,24 @@ class TelegramBotService:
                     await self._unsubscribe_chat(chat_id, session.conversation_id)
 
         assert self._app is not None
-        if self.config.webhook_url:
-            await self._app.bot.delete_webhook()
-        await self._app.stop()
-        await self._app.shutdown()
-        self._started = False
+        # PTB raises RuntimeError when stopping an app that never reached
+        # running state (e.g. polling failed during start). Stop best-effort
+        # so /stop always converges instead of 500ing.
+        try:
+            if self.config.webhook_url:
+                with suppress(Exception):
+                    await self._app.bot.delete_webhook()
+            if self._app.updater is not None:
+                with suppress(RuntimeError):
+                    await self._app.updater.stop()
+            if self._app.running:
+                await self._app.stop()
+        except RuntimeError as exc:
+            logger.warning(f"Telegram stop raced PTB state: {exc}")
+        finally:
+            with suppress(Exception):
+                await self._app.shutdown()
+            self._started = False
         logger.info("Telegram bot stopped")
 
     def is_running(self) -> bool:

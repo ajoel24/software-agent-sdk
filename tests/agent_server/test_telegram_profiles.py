@@ -195,6 +195,29 @@ async def test_chat_message_uses_normal_turn(service):
 
 
 @pytest.mark.asyncio
+async def test_stop_tolerates_wedged_app(service):
+    app = MagicMock()
+    app.updater.stop = AsyncMock()
+    app.running = False
+    app.stop = AsyncMock(side_effect=RuntimeError("not running"))
+    app.shutdown = AsyncMock()
+    service._app = app
+    service._started = True
+
+    await service.stop()  # must not raise
+
+    assert service._started is False
+    app.shutdown.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_stop_noop_when_not_started(service):
+    service._started = False
+    await service.stop()
+    assert service._started is False
+
+
+@pytest.mark.asyncio
 async def test_unsubscribe_chat(service):
     event_service = MagicMock()
     event_service.unsubscribe_from_events = AsyncMock(return_value=True)
