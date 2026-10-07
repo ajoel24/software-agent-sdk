@@ -19,7 +19,7 @@ from uuid import UUID
 
 from openhands.agent_server.conversation_service import ConversationService
 from openhands.agent_server.models import StartConversationRequest
-from openhands.agent_server.pub_sub import PubSub, Subscriber
+from openhands.agent_server.pub_sub import Subscriber
 from openhands.sdk.event import Event
 from openhands.sdk.event.conversation_state import ConversationStateUpdateEvent
 from openhands.sdk.logger import get_logger
@@ -128,7 +128,6 @@ class TelegramBotService:
         self._secrets_store = secrets_store
         self._chat_sessions: dict[int, TelegramChatSession] = {}
         self._subscribers: dict[int, UUID] = {}
-        self._pubsubs: dict[UUID, PubSub[Event]] = {}
         self._lock = asyncio.Lock()
         self._started = False
 
@@ -182,12 +181,10 @@ class TelegramBotService:
         if not self._started:
             return
         async with self._lock:
-            for chat_id, sub_id in list(self._subscribers.items()):
+            for chat_id in list(self._subscribers):
                 session = self._chat_sessions.get(chat_id)
                 if session and session.conversation_id:
-                    pubsub = self._pubsubs.get(session.conversation_id)
-                    if pubsub:
-                        pubsub.unsubscribe(sub_id)
+                    await self._unsubscribe_chat(chat_id, session.conversation_id)
 
         assert self._app is not None
         if self.config.webhook_url:
@@ -303,10 +300,7 @@ class TelegramBotService:
             if chat_id in self._chat_sessions:
                 old = self._chat_sessions[chat_id]
                 if old.conversation_id and chat_id in self._subscribers:
-                    pubsub = self._pubsubs.get(old.conversation_id)
-                    if pubsub:
-                        pubsub.unsubscribe(self._subscribers[chat_id])
-                    del self._subscribers[chat_id]
+                    await self._unsubscribe_chat(chat_id, old.conversation_id)
             self._chat_sessions[chat_id] = TelegramChatSession(
                 chat_id=chat_id,
                 chat_title=update.effective_chat.title,
@@ -325,10 +319,7 @@ class TelegramBotService:
             if session:
                 session.status = "idle"
                 if session.conversation_id and chat_id in self._subscribers:
-                    pubsub = self._pubsubs.get(session.conversation_id)
-                    if pubsub:
-                        pubsub.unsubscribe(self._subscribers[chat_id])
-                    del self._subscribers[chat_id]
+                    await self._unsubscribe_chat(chat_id, session.conversation_id)
         await update.message.reply_text("🛑 Conversation stopped.")
 
     async def _on_message(self, update, _context) -> None:
@@ -374,20 +365,38 @@ class TelegramBotService:
 
         conv_id = session.conversation_id
         assert conv_id is not None
+        from openhands.sdk import Message
+
+        event_service = await self._conversation_service.get_event_service(conv_id)
+        if event_service is None:
+            await self._send_message(chat_id, "❌ Conversation unavailable")
+            return
         if chat_id not in self._subscribers:
-            pubsub = await self._get_pubsub(conv_id)
             subscriber = _TelegramEventSubscriber(
                 chat_id=chat_id,
                 send_message=self._send_message,
             )
-            sub_id = pubsub.subscribe(subscriber)
-            self._subscribers[chat_id] = sub_id
+            self._subscribers[chat_id] = await event_service.subscribe_to_events(
+                subscriber
+            )
 
-        await self._conversation_service.ask_agent(
-            conversation_id=conv_id,
-            question=text,
-        )
+        # Normal turn on the shared conversation (visible in the UI),
+        # not ask_agent: that forks a side session most agents can't fork.
+        await event_service.send_message(Message(role="user", content=text), True)
         session.status = "idle"
+
+    async def _unsubscribe_chat(self, chat_id: int, conv_id: UUID | None) -> None:
+        sub_id = self._subscribers.pop(chat_id, None)
+        if sub_id is None or conv_id is None:
+            return
+        try:
+            event_service = await self._conversation_service.get_event_service(
+                conv_id
+            )
+            if event_service is not None:
+                await event_service.unsubscribe_from_events(sub_id)
+        except Exception as exc:
+            logger.warning(f"Failed to unsubscribe Telegram chat {chat_id}: {exc}")
 
     async def _create_conversation(
         self, chat_id: int, profile_name: str | None = None
@@ -414,14 +423,6 @@ class TelegramBotService:
         except Exception as exc:
             logger.error(f"Failed to create conversation for {chat_id}: {exc}")
             return None
-
-    async def _get_pubsub(self, conversation_id: UUID) -> PubSub[Event]:
-        if conversation_id not in self._pubsubs:
-            # EventService owns the canonical PubSub; this is a fallback
-            # for external subscribers that attach before the service
-            # initializes its own.
-            self._pubsubs[conversation_id] = PubSub[Event](max_subscribers=50)
-        return self._pubsubs[conversation_id]
 
     async def _send_message(self, chat_id: int, text: str) -> None:
         if not self._app or not self._app.bot:
