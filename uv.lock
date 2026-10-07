@@ -2803,12 +2803,14 @@ source = { editable = "openhands-agent-server" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "alembic" },
+    { name = "boto3" },
     { name = "docker" },
     { name = "fastapi" },
     { name = "openai" },
     { name = "openhands-sdk" },
     { name = "openhands-tools" },
     { name = "pydantic" },
+    { name = "python-telegram-bot" },
     { name = "sqlalchemy" },
     { name = "uvicorn" },
     { name = "websockets" },
@@ -2819,14 +2821,12 @@ dependencies = [
 posthog = [
     { name = "posthog" },
 ]
-telegram = [
-    { name = "python-telegram-bot" },
-]
 
 [package.metadata]
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.22.1" },
     { name = "alembic", specifier = ">=1.13" },
+    { name = "boto3", specifier = ">=1.35.0" },
     { name = "docker", specifier = ">=7.1,<8" },
     { name = "fastapi", specifier = ">=0.104" },
     { name = "openai", specifier = ">=2.33.0,<3" },
@@ -2834,13 +2834,13 @@ requires-dist = [
     { name = "openhands-tools", editable = "openhands-tools" },
     { name = "posthog", marker = "extra == 'posthog'", specifier = ">=7.60.0,<8" },
     { name = "pydantic", specifier = ">=2.13.5" },
-    { name = "python-telegram-bot", marker = "extra == 'telegram'", specifier = ">=22.0,<23" },
+    { name = "python-telegram-bot", specifier = ">=22.0,<23" },
     { name = "sqlalchemy", specifier = ">=2" },
     { name = "uvicorn", specifier = ">=0.54.0" },
     { name = "websockets", specifier = ">=12" },
     { name = "wsproto", specifier = ">=1.2.0" },
 ]
-provides-extras = ["posthog", "telegram"]
+provides-extras = ["posthog"]
 
 [[package]]
 name = "openhands-sdk"

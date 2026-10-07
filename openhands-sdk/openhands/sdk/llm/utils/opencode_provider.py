@@ -4,10 +4,10 @@ Zen (https://opencode.ai/docs/zen) is an OpenAI-compatible model gateway,
 similar to OpenRouter: models are addressed as ``opencode/<model-id>`` and
 authenticated with ``OPENCODE_API_KEY``.
 
-Unlike OpenRouter, Zen serves each model on exactly one protocol, mirroring
-how the pi agent routes per model (see ``opencodeProvider`` in pi-mono,
-which assigns every model an ``api`` of ``anthropic-messages``,
-``openai-completions`` or ``openai-responses``):
+Unlike OpenRouter, Zen serves each model on exactly one protocol, the same
+per-model ``api`` routing the pi agent uses (``anthropic-messages``,
+``openai-completions`` or ``openai-responses``; see ``opencodeProvider``
+in pi-mono):
 
 - ``/chat/completions`` models (default) translate to the ``openai/<id>``
   form against ``https://opencode.ai/zen/v1``.
@@ -23,7 +23,7 @@ translation. The canonical ``opencode/<id>`` name is preserved everywhere
 else (events, persistence, UI); only the LiteLLM call boundary and the
 ``api_mode`` default see the translated form.
 
-The protocol sets below mirror the Zen docs model table. Refresh them when
+The protocol sets below follow the Zen docs model table. Refresh them when
 Zen adds models (re-scrape https://opencode.ai/docs/zen/): unknown ids
 default to chat completions.
 """

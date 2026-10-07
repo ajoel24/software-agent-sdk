@@ -20,6 +20,38 @@ TELEGRAM_BOT_TOKEN_SECRET_NAME = "telegram_bot_token"
 TELEGRAM_WEBHOOK_SECRET_NAME = "telegram_webhook_secret"
 
 
+class TelegramEnv:
+    """Single location for every TELEGRAM_* environment read."""
+
+    @property
+    def bot_token(self) -> str:
+        return (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+
+    @property
+    def webhook_url(self) -> str | None:
+        return os.environ.get("TELEGRAM_WEBHOOK_URL")
+
+    @property
+    def webhook_secret(self) -> str | None:
+        return os.environ.get("TELEGRAM_WEBHOOK_SECRET")
+
+    @property
+    def allowed_usernames(self) -> str | None:
+        return os.environ.get("TELEGRAM_ALLOWED_USERNAMES")
+
+    @property
+    def default_workspace(self) -> str | None:
+        return os.environ.get("TELEGRAM_DEFAULT_WORKSPACE")
+
+    @property
+    def agent_profile(self) -> str | None:
+        return os.environ.get("TELEGRAM_AGENT_PROFILE")
+
+    @property
+    def config_file(self) -> str | None:
+        return os.environ.get("TELEGRAM_CONFIG_FILE")
+
+
 @dataclass
 class TelegramChatSession:
     """Tracks the link between a Telegram chat and an OpenHands conversation."""
@@ -50,7 +82,7 @@ class TelegramConfig:
 
 def _telegram_prefs_path() -> Path:
     """Location of the non-secret bot prefs (never holds token material)."""
-    override = os.environ.get("TELEGRAM_CONFIG_FILE")
+    override = TelegramEnv().config_file
     if override:
         return Path(override)
     return Path.home() / ".openhands" / "telegram.json"

@@ -1,4 +1,4 @@
-/** Telegram bot integration types (mirrors the agent-server router models). */
+/** Telegram bot integration types. */
 
 export type TelegramBotStatus = 'stopped' | 'starting' | 'running' | 'error';
 

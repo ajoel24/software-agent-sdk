@@ -1,4 +1,5 @@
 import { HttpClient } from './http-client';
+import { TELEGRAM_ROUTES } from '../telegram/routes';
 import type { TelegramChatSession, TelegramStartRequest, TelegramStatus } from '../telegram/types';
 
 export interface TelegramClientOptions {
@@ -6,13 +7,6 @@ export interface TelegramClientOptions {
   apiKey?: string;
   timeout?: number;
 }
-
-const TELEGRAM_ROUTES = {
-  status: '/telegram/status',
-  start: '/telegram/start',
-  stop: '/telegram/stop',
-  chats: '/telegram/chats',
-} as const;
 
 export class TelegramClient {
   public readonly host: string;

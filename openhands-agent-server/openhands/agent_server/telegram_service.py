@@ -52,7 +52,7 @@ class TelegramBotService:
         except ImportError as exc:
             raise RuntimeError(
                 "python-telegram-bot is required for Telegram integration. "
-                "Install with: pip install openhands-agent-server[telegram]"
+                'Install with: pip install "openhands-agent-server"'
             ) from exc
 
         self._Update = Update
