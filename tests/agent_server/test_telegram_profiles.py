@@ -195,6 +195,53 @@ async def test_chat_message_uses_normal_turn(service):
 
 
 @pytest.mark.asyncio
+async def test_duplicate_update_processed_once(service):
+    update = _update("/new")
+    update.update_id = 42
+    await service._cmd_new(update, MagicMock())
+    await service._cmd_new(update, MagicMock())
+    assert update.message.reply_text.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_distinct_updates_each_processed(service):
+    first, second = _update("/new"), _update("/new")
+    first.update_id, second.update_id = 1, 2
+    await service._cmd_new(first, MagicMock())
+    await service._cmd_new(second, MagicMock())
+    assert first.message.reply_text.await_count == 1
+    assert second.message.reply_text.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_first_messages_create_one_conversation(service):
+    import asyncio as _asyncio
+
+    calls = 0
+
+    async def fake_create(chat_id, profile_name):
+        nonlocal calls
+        calls += 1
+        await _asyncio.sleep(0.05)
+        return {"id": UUID(int=calls)}
+
+    service._create_conversation = fake_create  # type: ignore[method-assign]
+    session = tg.TelegramChatSession(chat_id=1)
+    event_service = MagicMock()
+    event_service.subscribe_to_events = AsyncMock(return_value=UUID(int=3))
+    event_service.send_message = AsyncMock()
+    service._conversation_service.get_event_service = AsyncMock(
+        return_value=event_service
+    )
+
+    await _asyncio.gather(
+        service._handle_chat_message(1, "hi", session),
+        service._handle_chat_message(1, "hi", session),
+    )
+    assert calls == 1
+
+
+@pytest.mark.asyncio
 async def test_stop_tolerates_wedged_app(service):
     app = MagicMock()
     app.updater.stop = AsyncMock()

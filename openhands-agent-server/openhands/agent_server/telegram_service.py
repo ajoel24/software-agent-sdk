@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from collections import deque
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -129,6 +130,10 @@ class TelegramBotService:
         self._chat_sessions: dict[int, TelegramChatSession] = {}
         self._subscribers: dict[int, UUID] = {}
         self._lock = asyncio.Lock()
+        # Recently processed Telegram update ids. Telegram redelivers
+        # updates on polling races; without this, one /new or message
+        # executes (and replies) multiple times.
+        self._seen_updates: deque[int] = deque(maxlen=1000)
         self._started = False
 
         # Lazy import: telegram is an optional dependency.
@@ -226,6 +231,8 @@ class TelegramBotService:
         await self._app.process_update(update)
 
     async def _cmd_start(self, update, _context) -> None:
+        if self._is_duplicate_update(update):
+            return
         user = update.effective_user
         if not self._is_allowed(user):
             await update.message.reply_text(
@@ -246,6 +253,8 @@ class TelegramBotService:
         await self._cmd_start(update, _context)
 
     async def _cmd_status(self, update, _context) -> None:
+        if self._is_duplicate_update(update):
+            return
         status = self.get_status()
         await update.message.reply_text(
             f"📊 Status: {status['status']}\n"
@@ -303,6 +312,8 @@ class TelegramBotService:
         return result
 
     async def _cmd_new(self, update, _context) -> None:
+        if self._is_duplicate_update(update):
+            return
         chat_id = update.effective_chat.id
         parts = (update.message.text or "").split()
         profile_name = parts[1] if len(parts) > 1 else None
@@ -328,6 +339,8 @@ class TelegramBotService:
         )
 
     async def _cmd_stop(self, update, _context) -> None:
+        if self._is_duplicate_update(update):
+            return
         chat_id = update.effective_chat.id
         async with self._lock:
             session = self._chat_sessions.get(chat_id)
@@ -340,6 +353,8 @@ class TelegramBotService:
     async def _on_message(self, update, _context) -> None:
         user = update.effective_user
         if not self._is_allowed(user):
+            return
+        if self._is_duplicate_update(update):
             return
         chat_id = update.effective_chat.id
         text = update.message.text
@@ -368,15 +383,34 @@ class TelegramBotService:
             await update.message.reply_text(f"❌ Error: {detail}")
             session.status = "error"
 
+    def _is_duplicate_update(self, update) -> bool:
+        """True when this Telegram update was already processed.
+
+        The check-and-record is synchronous (no awaits), so concurrent
+        handler tasks can't both slip through for the same update.
+        """
+        update_id = getattr(update, "update_id", None)
+        if update_id is None:
+            return False
+        if update_id in self._seen_updates:
+            return True
+        self._seen_updates.append(update_id)
+        return False
+
     async def _handle_chat_message(
         self, chat_id: int, text: str, session: TelegramChatSession
     ) -> None:
-        if session.conversation_id is None:
-            conv = await self._create_conversation(chat_id, session.profile_name)
-            if conv is None:
-                await self._send_message(chat_id, "❌ Failed to create conversation")
-                return
-            session.conversation_id = conv["id"]
+        # Guard the lazy first-message creation: duplicate deliveries of
+        # the same message race here while conversation_id is still None.
+        async with self._lock:
+            if session.conversation_id is None:
+                conv = await self._create_conversation(chat_id, session.profile_name)
+                if conv is None:
+                    await self._send_message(
+                        chat_id, "❌ Failed to create conversation"
+                    )
+                    return
+                session.conversation_id = conv["id"]
 
         conv_id = session.conversation_id
         assert conv_id is not None
