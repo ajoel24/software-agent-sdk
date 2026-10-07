@@ -5,6 +5,7 @@ Business logic is delegated to telegram_service.py.
 """
 
 import os
+from contextlib import suppress
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -158,6 +159,13 @@ async def telegram_start(
     existing = _get_telegram_service()
     if existing and existing.is_running():
         return {"status": "already_running", **existing.get_status()}
+    if existing:
+        # A previous instance exists but isn't running (e.g. polling died
+        # during start). Shut it down so its updater doesn't leak and spam
+        # polling errors, then replace it below.
+        with suppress(Exception):
+            await existing.stop()
+        _set_telegram_service(None)
 
     store = get_secrets_store(get_config(request))
     token = (req.bot_token or os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
