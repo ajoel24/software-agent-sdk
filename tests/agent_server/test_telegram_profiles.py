@@ -239,8 +239,8 @@ async def test_streaming_turn_forwarded_whole_once():
             llm_message=_Message(role="assistant", content=[_TextContent(text=full)]),
         )
     )
-    # ...and the run-end flush delivers exactly one whole message.
-    assert sent == []
+    # ...and the complete agent message flushes immediately (not at run-end).
+    assert sent == [full]
     await sub(ConversationStateUpdateEvent(key="execution_status", value="idle"))
     assert sent == [full]
 

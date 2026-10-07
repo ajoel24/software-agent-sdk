@@ -69,18 +69,19 @@ class _TelegramEventSubscriber(Subscriber[Event]):
 
         if not text:
             return
-        # Streaming deltas accumulate; the final MessageEvent usually
-        # repeats the full text, so collapse overlaps instead of
-        # duplicating. Flushing only whole turns keeps markdown (e.g.
-        # code fences) intact — timer-based mid-stream flushes split
-        # responses at arbitrary points.
+        # Streaming deltas accumulate silently; each complete agent
+        # MessageEvent flushes immediately so answers go out the moment
+        # they're done instead of waiting on run-end state propagation.
+        # The final event usually repeats the streamed full text, so
+        # collapse overlaps instead of duplicating. Flushing only whole
+        # messages keeps markdown (e.g. code fences) intact.
+        is_final = isinstance(event, MessageEvent)
         buffered = self._buffered_text
         if buffered and (buffered in text or text in buffered):
             self._buffer = [text if len(text) > len(buffered) else buffered]
         elif text != buffered:
             self._buffer.append(text)
-        # Bound memory on huge streams; only splits past ~3500 chars.
-        if len(self._buffered_text) > 3500:
+        if is_final or len(self._buffered_text) > 3500:
             await self._flush()
 
     async def flush(self) -> None:
