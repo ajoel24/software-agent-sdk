@@ -42,3 +42,23 @@ def test_telegram_chats_unconfigured(client):
 def test_telegram_webhook_not_running(client):
     response = client.post("/telegram/webhook", json={"update_id": 1})
     assert response.status_code == 503
+
+
+def test_start_response_shape():
+    from unittest.mock import MagicMock
+
+    from openhands.agent_server.telegram_router import _start_response
+
+    service = MagicMock()
+    service.get_status.return_value = {
+        "status": "running",
+        "active_chats": 0,
+        "total_messages": 0,
+    }
+    service.config.bot_token = "123:ABC"
+    service.config.webhook_url = None
+
+    body = _start_response(service, "started").model_dump()
+    assert body["result"] == "started"
+    assert body["status"] == "running"
+    assert body["bot_token_configured"] is True
