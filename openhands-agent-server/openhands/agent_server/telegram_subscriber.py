@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from openhands.agent_server.pub_sub import Subscriber
+from openhands.agent_server.telegram_config import AGENT_SOURCE, FINISH_TOOL_NAME
+from openhands.sdk.conversation.state import ConversationExecutionStatus
 from openhands.sdk.event import Event
 from openhands.sdk.event.conversation_state import ConversationStateUpdateEvent
 from openhands.sdk.logger import get_logger
@@ -41,19 +43,27 @@ class _TelegramEventSubscriber(Subscriber[Event]):
         if isinstance(event, StreamingDeltaEvent):
             text = event.content
         elif isinstance(event, MessageEvent):
-            if event.source == "agent":
+            if event.source == AGENT_SOURCE:
                 text = "\n".join(content_to_str(event.llm_message.content))
         elif isinstance(event, ActionEvent):
-            if event.source == "agent" and event.tool_name == "finish":
+            if event.source == AGENT_SOURCE and event.tool_name == FINISH_TOOL_NAME:
                 message = getattr(event.action, "message", None)
                 if isinstance(message, str) and message.strip():
                     text = message
         elif isinstance(event, ConversationStateUpdateEvent):
             if event.key == "execution_status" and isinstance(event.value, str):
-                status_value = event.value.lower()
-                if status_value == "error":
+                try:
+                    run_status = ConversationExecutionStatus(event.value.lower())
+                except ValueError:
+                    run_status = None
+                if run_status == ConversationExecutionStatus.ERROR:
                     text = "❌ Conversation error"
-                if status_value in ("idle", "error", "finished"):
+                if run_status in (
+                    ConversationExecutionStatus.IDLE,
+                    ConversationExecutionStatus.FINISHED,
+                    ConversationExecutionStatus.ERROR,
+                    ConversationExecutionStatus.STUCK,
+                ):
                     await self._flush()
 
         if not text:

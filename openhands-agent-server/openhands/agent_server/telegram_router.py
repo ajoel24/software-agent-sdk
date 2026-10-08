@@ -16,8 +16,11 @@ from openhands.agent_server.persistence import SecretsStore, get_secrets_store
 from openhands.agent_server.telegram_config import (
     TELEGRAM_BOT_TOKEN_SECRET_NAME,
     TELEGRAM_WEBHOOK_SECRET_NAME,
+    TelegramChatStatus,
     TelegramConfig,
     TelegramEnv,
+    TelegramServiceStatus,
+    TelegramStartResult,
     load_telegram_prefs,
     save_telegram_prefs,
 )
@@ -69,7 +72,7 @@ class TelegramChatSessionResponse(BaseModel):
     chat_title: str | None = None
     chat_username: str | None = None
     conversation_id: str | None = None
-    status: str = "idle"
+    status: str = TelegramChatStatus.IDLE.value
     message_count: int = 0
     last_activity: str | None = None
 
@@ -83,7 +86,7 @@ class TelegramStatusResponse(BaseModel):
 
 
 class TelegramStartResponse(TelegramStatusResponse):
-    result: str
+    result: TelegramStartResult
 
 
 def _parse_allowed_usernames(raw: str | None) -> list[str]:
@@ -208,7 +211,9 @@ def _resolve_start_config(
     return _config_from_env_or_store(request, req)
 
 
-def _start_response(service: TelegramBotService, result: str) -> TelegramStartResponse:
+def _start_response(
+    service: TelegramBotService, result: TelegramStartResult
+) -> TelegramStartResponse:
     live = service.get_status()
     return TelegramStartResponse(
         result=result,
@@ -253,7 +258,7 @@ async def telegram_start(
     """
     existing = _get_telegram_service_state(request)
     if existing and existing.is_running():
-        return _start_response(existing, "already_running")
+        return _start_response(existing, TelegramStartResult.ALREADY_RUNNING)
     if existing:
         with suppress(Exception):
             await existing.stop()
@@ -273,7 +278,7 @@ async def telegram_start(
     _set_telegram_service_state(request, service)
     await service.start()
     _persist_start_config(get_secrets_store(get_config(request)), config)
-    return _start_response(service, "started")
+    return _start_response(service, TelegramStartResult.STARTED)
 
 
 @telegram_router.post("/stop")
@@ -284,7 +289,7 @@ async def telegram_stop(
     """Stop the Telegram bot."""
     await service.stop()
     _set_telegram_service_state(request, None)
-    return {"status": "stopped"}
+    return {"status": TelegramServiceStatus.STOPPED.value}
 
 
 @telegram_router.get("/chats", response_model=list[TelegramChatSessionResponse])

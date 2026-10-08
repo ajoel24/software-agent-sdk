@@ -11,6 +11,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -18,6 +19,28 @@ from uuid import UUID
 
 TELEGRAM_BOT_TOKEN_SECRET_NAME = "telegram_bot_token"
 TELEGRAM_WEBHOOK_SECRET_NAME = "telegram_webhook_secret"
+
+TELEGRAM_SOURCE_TAG = "telegram"
+TELEGRAM_CHAT_ID_TAG = "chatid"
+FINISH_TOOL_NAME = "finish"
+AGENT_SOURCE = "agent"
+
+
+class TelegramChatStatus(str, Enum):
+    IDLE = "idle"
+    RUNNING = "running"
+    ERROR = "error"
+
+
+class TelegramServiceStatus(str, Enum):
+    RUNNING = "running"
+    STOPPED = "stopped"
+
+
+class TelegramStartResult(str, Enum):
+    STARTED = "started"
+    ALREADY_RUNNING = "already_running"
+    STOPPED = "stopped"
 
 
 class TelegramEnv:
