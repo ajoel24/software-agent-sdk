@@ -260,7 +260,7 @@ async def telegram_start(
     if existing and existing.is_running():
         return _start_response(existing, TelegramStartResult.ALREADY_RUNNING)
     if existing:
-        with suppress(Exception):
+        with suppress(OSError, RuntimeError):
             await existing.stop()
         _set_telegram_service_state(request, None)
 
