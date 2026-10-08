@@ -208,6 +208,18 @@ def _resolve_start_config(
     return _config_from_env_or_store(request, req)
 
 
+def _start_response(service: TelegramBotService, result: str) -> TelegramStartResponse:
+    live = service.get_status()
+    return TelegramStartResponse(
+        result=result,
+        status=live["status"],
+        active_chats=live["active_chats"],
+        total_messages=live["total_messages"],
+        bot_token_configured=bool(service.config.bot_token),
+        webhook_url=service.config.webhook_url,
+    )
+
+
 def _persist_start_config(store: SecretsStore, config: TelegramConfig) -> None:
     """Store token material in the SecretsStore and prefs on disk."""
     try:
@@ -241,8 +253,7 @@ async def telegram_start(
     """
     existing = _get_telegram_service_state(request)
     if existing and existing.is_running():
-        live = existing.get_status()
-        return TelegramStartResponse(result="already_running", **live)
+        return _start_response(existing, "already_running")
     if existing:
         with suppress(Exception):
             await existing.stop()
@@ -262,8 +273,7 @@ async def telegram_start(
     _set_telegram_service_state(request, service)
     await service.start()
     _persist_start_config(get_secrets_store(get_config(request)), config)
-    live = service.get_status()
-    return TelegramStartResponse(result="started", **live)
+    return _start_response(service, "started")
 
 
 @telegram_router.post("/stop")
