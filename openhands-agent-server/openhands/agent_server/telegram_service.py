@@ -104,9 +104,11 @@ class TelegramBotService:
                     await self._unsubscribe_chat(chat_id, session.conversation_id)
 
         assert self._app is not None
+        from telegram.error import TelegramError
+
         try:
             if self.config.webhook_url:
-                with suppress(Exception):
+                with suppress(TelegramError):
                     await self._app.bot.delete_webhook()
             if self._app.updater is not None:
                 with suppress(RuntimeError):
@@ -116,7 +118,7 @@ class TelegramBotService:
         except RuntimeError as exc:
             logger.warning(f"Telegram stop raced PTB state: {exc}")
         finally:
-            with suppress(Exception):
+            with suppress(TelegramError, RuntimeError):
                 await self._app.shutdown()
             self._started = False
         logger.info("Telegram bot stopped")
@@ -201,7 +203,7 @@ class TelegramBotService:
             store = self._secrets_store or get_secrets_store()
             secrets = store.load()
             stored_names = list(secrets.custom_secrets) if secrets else []
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             logger.warning(f"Could not read secrets store for Telegram: {exc}")
             return {}
         refs = getattr(profile, "secret_refs", None)
@@ -210,7 +212,7 @@ class TelegramBotService:
         for secret_name in names:
             try:
                 value = store.get_secret(secret_name)
-            except Exception as exc:
+            except (OSError, KeyError, RuntimeError, ValueError) as exc:
                 logger.warning(f"Could not read secret for Telegram: {exc}")
                 continue
             if value:
@@ -289,7 +291,7 @@ class TelegramBotService:
         await update.message.chat.send_action(action="typing")
         try:
             await self._handle_chat_message(chat_id, text, session)
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             logger.error(f"Error handling Telegram message: {exc}", exc_info=True)
             detail = str(exc)[:500]
             if "Authentication required" in detail:
@@ -351,7 +353,7 @@ class TelegramBotService:
             event_service = await self._conversation_service.get_event_service(conv_id)
             if event_service is not None:
                 await event_service.unsubscribe_from_events(sub_id)
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             logger.warning(f"Failed to unsubscribe Telegram chat {chat_id}: {exc}")
 
     async def _create_conversation(
@@ -379,7 +381,7 @@ class TelegramBotService:
                 f"⛔ {exc}\nCreate one in Settings → Agents, or /new <profile>.",
             )
             return None
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             logger.error(f"Failed to create conversation for {chat_id}: {exc}")
             return None
 
@@ -388,7 +390,7 @@ class TelegramBotService:
             return
         try:
             await self._app.bot.send_message(chat_id=chat_id, text=text[:4096])
-        except Exception as exc:
+        except (TelegramError, OSError, RuntimeError) as exc:
             logger.warning(f"Failed to send Telegram message: {exc}")
 
     def _is_allowed(self, user: Any) -> bool:

@@ -13,8 +13,11 @@ from openhands.sdk.profiles.agent_profile_store import AgentProfileStore
 
 
 def _stub_telegram_lib():
+    telegram_error = ModuleType("telegram.error")
+    telegram_error.TelegramError = type("TelegramError", (Exception,), {})
     sys.modules["telegram"] = cast(ModuleType, MagicMock())
     sys.modules["telegram.ext"] = cast(ModuleType, MagicMock())
+    sys.modules["telegram.error"] = telegram_error
 
 
 _stub_telegram_lib()

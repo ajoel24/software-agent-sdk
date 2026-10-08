@@ -90,7 +90,7 @@ class _TelegramEventSubscriber(Subscriber[Event]):
             msg = msg[:3990] + "\n... (truncated)"
         try:
             await self._send(self.chat_id, msg)
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             logger.warning(f"Failed to send Telegram message: {exc}")
 
     async def close(self) -> None:
