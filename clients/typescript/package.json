@@ -1,5 +1,5 @@
 {
-  "name": "@ajoel24/typescript-client",
+  "name": "@ajoel24/openhands-client",
   "version": "1.54.0",
   "description": "TypeScript client for OpenHands Agent Server",
   "main": "dist/index.js",
