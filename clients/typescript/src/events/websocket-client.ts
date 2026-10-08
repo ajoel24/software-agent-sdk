@@ -13,7 +13,7 @@ import {
 // IMPORTANT: this block must never throw. It runs whenever this file is
 // imported, and this file is transitively imported by the package barrel
 // (via RemoteConversation), so any throw here crashes consumers that
-// merely `import { RemoteWorkspace } from "@ajoel24/openhands-client"`
+// merely `import { RemoteWorkspace } from "@ajoel24/openhands-typescript-client"`
 // even when they have no intent to open a WebSocket. The "no implementation
 // available" condition is deferred to connect() time, where it is surfaced
 // through the existing onError callback channel.
