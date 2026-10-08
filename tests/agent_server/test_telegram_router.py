@@ -47,6 +47,7 @@ def test_telegram_webhook_not_running(client):
 def test_start_response_shape():
     from unittest.mock import MagicMock
 
+    from openhands.agent_server.telegram_config import TelegramStartResult
     from openhands.agent_server.telegram_router import _start_response
 
     service = MagicMock()
@@ -58,7 +59,7 @@ def test_start_response_shape():
     service.config.bot_token = "123:ABC"
     service.config.webhook_url = None
 
-    body = _start_response(service, "started").model_dump()
+    body = _start_response(service, TelegramStartResult.STARTED).model_dump()
     assert body["result"] == "started"
     assert body["status"] == "running"
     assert body["bot_token_configured"] is True

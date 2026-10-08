@@ -12,8 +12,12 @@ from uuid import UUID
 from openhands.agent_server.conversation_service import ConversationService
 from openhands.agent_server.models import StartConversationRequest
 from openhands.agent_server.telegram_config import (
+    TELEGRAM_CHAT_ID_TAG,
+    TELEGRAM_SOURCE_TAG,
     TelegramChatSession,
+    TelegramChatStatus,
     TelegramConfig,
+    TelegramServiceStatus,
 )
 from openhands.agent_server.telegram_subscriber import _TelegramEventSubscriber
 from openhands.sdk.logger import get_logger
@@ -125,7 +129,11 @@ class TelegramBotService:
 
     def get_status(self) -> dict[str, Any]:
         return {
-            "status": "running" if self._started else "stopped",
+            "status": (
+                TelegramServiceStatus.RUNNING
+                if self._started
+                else TelegramServiceStatus.STOPPED
+            ).value,
             "active_chats": len(self._chat_sessions),
             "total_messages": sum(
                 s.message_count for s in self._chat_sessions.values()
@@ -255,7 +263,7 @@ class TelegramBotService:
         async with self._lock:
             session = self._chat_sessions.get(chat_id)
             if session:
-                session.status = "idle"
+                session.status = TelegramChatStatus.IDLE.value
                 if session.conversation_id and chat_id in self._subscribers:
                     await self._unsubscribe_chat(chat_id, session.conversation_id)
         await update.message.reply_text("🛑 Conversation stopped.")
@@ -277,7 +285,7 @@ class TelegramBotService:
                 self._chat_sessions[chat_id] = session
             session.message_count += 1
             session.last_activity = datetime.now(UTC)
-            session.status = "running"
+            session.status = TelegramChatStatus.RUNNING.value
         await update.message.chat.send_action(action="typing")
         try:
             await self._handle_chat_message(chat_id, text, session)
@@ -290,7 +298,7 @@ class TelegramBotService:
                     "Secrets, then /new."
                 )
             await update.message.reply_text(f"❌ Error: {detail}")
-            session.status = "error"
+            session.status = TelegramChatStatus.ERROR.value
 
     def _is_duplicate_update(self, update: Any) -> bool:
         update_id = getattr(update, "update_id", None)
@@ -333,7 +341,7 @@ class TelegramBotService:
         await event_service.send_message(
             Message(role="user", content=[TextContent(text=text)]), run=True
         )
-        session.status = "idle"
+        session.status = TelegramChatStatus.IDLE.value
 
     async def _unsubscribe_chat(self, chat_id: int, conv_id: UUID | None) -> None:
         sub_id = self._subscribers.pop(chat_id, None)
@@ -355,7 +363,10 @@ class TelegramBotService:
             profile = await asyncio.to_thread(self._resolve_profile, profile_name)
             req = StartConversationRequest(
                 workspace=LocalWorkspace(working_dir=self.config.default_workspace),
-                tags={"source": "telegram", "chatid": str(chat_id)},
+                tags={
+                    "source": TELEGRAM_SOURCE_TAG,
+                    TELEGRAM_CHAT_ID_TAG: str(chat_id),
+                },
                 agent_profile_id=profile.id,
                 secrets=self._conversation_secrets(profile),
             )
