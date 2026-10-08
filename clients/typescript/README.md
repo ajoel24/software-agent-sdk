@@ -20,26 +20,10 @@ This client is **fully browser-compatible** and works without Node.js dependenci
 
 ## Installation
 
-This package is published to npm and GitHub Packages from the `clients/typescript` directory of the OpenHands Software Agent SDK repository.
-
-### Option 1: Configure .npmrc
-
-Add this to your `.npmrc` file:
-
-```
-@openhands:registry=https://npm.pkg.github.com
-```
-
-Then install normally:
+Published to the public npm registry from the `clients/typescript` directory of this repository. No registry configuration needed:
 
 ```bash
-npm install @openhands/typescript-client
-```
-
-### Option 2: Direct install with registry flag
-
-```bash
-npm install @openhands/typescript-client --registry=https://npm.pkg.github.com
+npm install @ajoel24/typescript-client
 ```
 
 ## Agent Server API contract
@@ -90,7 +74,7 @@ docker run -p 127.0.0.1:8000:8000 -p 127.0.0.1:8001:8001 \
 ### Creating a Conversation
 
 ```typescript
-import { Conversation, Agent, Workspace } from '@openhands/typescript-client';
+import { Conversation, Agent, Workspace } from '@ajoel24/typescript-client';
 
 const agent = new Agent({
   llm: {
@@ -174,7 +158,7 @@ const downloadResult = await conversation.workspace.fileDownload(
 ### Server-wide Operations
 
 ```typescript
-import { ConversationManager } from '@openhands/typescript-client';
+import { ConversationManager } from '@ajoel24/typescript-client';
 
 const manager = new ConversationManager({
   host: 'http://localhost:3000',
@@ -215,7 +199,7 @@ request to the corresponding Agent Server MCP settings operation.
 If you need the lower-level endpoint-specific clients directly, import them from the secondary entrypoint:
 
 ```typescript
-import { ServerClient, BashClient } from '@openhands/typescript-client/clients';
+import { ServerClient, BashClient } from '@ajoel24/typescript-client/clients';
 ```
 
 ### Aggregate Agent Server and Cloud Clients
@@ -223,7 +207,7 @@ import { ServerClient, BashClient } from '@openhands/typescript-client/clients';
 The `/clients` entrypoint also exposes aggregate clients. `AgentServerClient` bundles every agent-server endpoint client behind namespaces, and `CloudClient` covers the OpenHands Cloud app API (bearer auth, org scoping, and an optional proxy for runtime-sandbox calls):
 
 ```typescript
-import { AgentServerClient, CloudClient } from '@openhands/typescript-client/clients';
+import { AgentServerClient, CloudClient } from '@ajoel24/typescript-client/clients';
 
 const agentServer = new AgentServerClient({
   host: 'http://localhost:3000',
@@ -248,7 +232,7 @@ const created = await cloud.createConversation({ initial_message: 'Fix the bug' 
 To obtain a Cloud API key interactively, use the device-flow helpers:
 
 ```typescript
-import { startDeviceFlow, pollForToken } from '@openhands/typescript-client/clients';
+import { startDeviceFlow, pollForToken } from '@ajoel24/typescript-client/clients';
 
 const requestMetadata = {
   headers: { 'X-My-Client': 'my-client-name' },
@@ -403,7 +387,7 @@ The library includes comprehensive TypeScript type definitions:
 The client includes proper error handling with custom error types:
 
 ```typescript
-import { HttpError } from '@openhands/typescript-client';
+import { HttpError } from '@ajoel24/typescript-client';
 
 try {
   await conversation.sendMessage('Hello');
@@ -552,7 +536,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ### Browser conversation event streams
 
-`ConversationEventStream` from `@openhands/typescript-client/clients` owns the
+`ConversationEventStream` from `@ajoel24/typescript-client/clients` owns the
 Agent Server event socket transport. Use it when an application already manages
 conversation state and needs raw event frames and connection lifecycle callbacks.
 It authenticates with the first frame, preserves replay parameters, reconnects
@@ -563,7 +547,7 @@ after 10 seconds. It does not retain message history.
 import {
   ConversationEventStream,
   buildConversationEventStreamUrl,
-} from '@openhands/typescript-client/clients';
+} from '@ajoel24/typescript-client/clients';
 
 const stream = new ConversationEventStream({
   url: buildConversationEventStreamUrl(agentServerUrl, conversationId),
