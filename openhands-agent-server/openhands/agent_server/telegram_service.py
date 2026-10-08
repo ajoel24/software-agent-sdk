@@ -386,6 +386,8 @@ class TelegramBotService:
             return None
 
     async def _send_message(self, chat_id: int, text: str) -> None:
+        from telegram.error import TelegramError
+
         if not self._app or not self._app.bot:
             return
         try:
