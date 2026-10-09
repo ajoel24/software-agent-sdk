@@ -1,0 +1,64 @@
+name: Factory agent-server image
+
+# Builds the factory agent-server image (Telegram integration, pi ACP
+# provider, minimal capabilities) and pushes it to GHCR for local runs,
+# so developers pull instead of building. Runs only on this fork's main
+# (upstream's server.yml guards its own GHCR pushes to the upstream repo).
+on:
+    push:
+        branches: [main]
+        paths:
+            - openhands-agent-server/**
+            - openhands-sdk/**
+            - openhands-tools/**
+            - openhands-workspace/**
+            - pyproject.toml
+            - uv.lock
+            - .github/workflows/factory-server-image.yml
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    packages: write
+
+jobs:
+    build-and-push:
+        runs-on: ubuntu-24.04
+        steps:
+            - uses: actions/checkout@v7.0.1
+              with: {fetch-depth: 0}
+
+            - name: Log in to GHCR
+              uses: docker/login-action@v3
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Read agent-server version
+              id: version
+              run: |
+                  VER=$(python3 -c "import tomllib; print(tomllib.load(open('openhands-agent-server/pyproject.toml','rb'))['project']['version'])")
+                  echo "version=$VER" >> "$GITHUB_OUTPUT"
+                  echo "short_sha=$(echo '${{ github.sha }}' | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
+            - name: Build and push
+              uses: docker/build-push-action@v7
+              with:
+                  context: .
+                  file: openhands-agent-server/openhands/agent_server/docker/Dockerfile
+                  target: source
+                  platforms: linux/amd64
+                  push: true
+                  tags: |
+                      ghcr.io/ajoel24/agent-server:latest
+                      ghcr.io/ajoel24/agent-server:main
+                      ghcr.io/ajoel24/agent-server:sha-${{ steps.version.outputs.short_sha }}
+                      ghcr.io/ajoel24/agent-server:${{ steps.version.outputs.version }}-python
+                  build-args: |
+                      INSTALL_ACP_PROVIDERS=pi
+                      INSTALL_CAPABILITIES=
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max
+                  provenance: true
+                  sbom: true
