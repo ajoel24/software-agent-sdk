@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import suppress
 import os
 import shutil
 import sys
@@ -114,7 +115,7 @@ class PiRpcClient:
         if self._reader_task and not self._reader_task.done():
             self._reader_task.cancel()
         if self._proc:
-            with asyncio.suppress(ProcessLookupError):
+            with suppress(ProcessLookupError):
                 self._proc.terminate()
                 await asyncio.wait_for(self._proc.wait(), timeout=5.0)
 

@@ -2,7 +2,7 @@
 
 import sys
 from types import ModuleType
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
@@ -13,7 +13,7 @@ from openhands.sdk.profiles.agent_profile_store import AgentProfileStore
 
 
 def _stub_telegram_lib():
-    telegram_error = ModuleType("telegram.error")
+    telegram_error: Any = MagicMock()
     telegram_error.TelegramError = type("TelegramError", (Exception,), {})
     sys.modules["telegram"] = cast(ModuleType, MagicMock())
     sys.modules["telegram.ext"] = cast(ModuleType, MagicMock())
