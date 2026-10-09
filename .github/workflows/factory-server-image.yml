@@ -51,10 +51,10 @@ jobs:
                   platforms: linux/amd64
                   push: true
                   tags: |
-                      ghcr.io/ajoel24/agent-server:latest
-                      ghcr.io/ajoel24/agent-server:main
-                      ghcr.io/ajoel24/agent-server:sha-${{ steps.version.outputs.short_sha }}
-                      ghcr.io/ajoel24/agent-server:${{ steps.version.outputs.version }}-python
+                      ghcr.io/ajoel24/openhands-agent-server:latest
+                      ghcr.io/ajoel24/openhands-agent-server:main
+                      ghcr.io/ajoel24/openhands-agent-server:sha-${{ steps.version.outputs.short_sha }}
+                      ghcr.io/ajoel24/openhands-agent-server:${{ steps.version.outputs.version }}-python
                   build-args: |
                       INSTALL_ACP_PROVIDERS=pi
                       INSTALL_CAPABILITIES=
