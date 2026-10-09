@@ -304,12 +304,14 @@ jobs:
     build-and-push-image:
         name: Build & Push (${{ matrix.variant }}-${{ matrix.arch }})
         # Run on push events, pull requests from the same repository (not forks), and manual workflow_dispatch
-        # Fork PRs cannot push to GHCR and would fail authentication
+        # Fork PRs cannot push to GHCR and would fail authentication.
+        # Skipped entirely on forks: factory images are built by factory-server-image.yml.
         if: >
-            github.event_name == 'push' ||
+            github.repository == 'OpenHands/software-agent-sdk' &&
+            (github.event_name == 'push' ||
             github.event_name == 'workflow_dispatch' ||
             (github.event_name == 'pull_request' &&
-             !github.event.pull_request.head.repo.fork)
+             !github.event.pull_request.head.repo.fork))
         strategy:
             fail-fast: false
             matrix:
@@ -594,10 +596,11 @@ jobs:
         name: Merge Multi-Arch Manifests
         needs: build-and-push-image
         if: >
-            github.event_name == 'push' ||
+            github.repository == 'OpenHands/software-agent-sdk' &&
+            (github.event_name == 'push' ||
             github.event_name == 'workflow_dispatch' ||
             (github.event_name == 'pull_request' &&
-             !github.event.pull_request.head.repo.fork)
+             !github.event.pull_request.head.repo.fork))
         runs-on: ubuntu-24.04
         strategy:
             matrix:
