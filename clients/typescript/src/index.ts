@@ -144,7 +144,7 @@ export { BashWebSocketClient } from './events/bash-websocket-client';
 export type { BashWebSocketClientOptions } from './events/bash-websocket-client';
 
 // HTTP client
-export { HttpClient, HttpError } from './client/http-client';
+export { HttpClient, HttpError, isHttpError } from './client/http-client';
 export { HooksClient } from './client/hooks-client';
 export { TelegramClient } from './client/telegram-client';
 export type { TelegramClientOptions } from './client/telegram-client';
@@ -297,7 +297,12 @@ export type {
 } from './models/conversation';
 
 // Client options
-export type { HttpClientOptions, RequestOptions, HttpResponse } from './client/http-client';
+export type {
+  HttpClientOptions,
+  RequestOptions,
+  HttpResponse,
+  HttpValidationErrorItem,
+} from './client/http-client';
 export type { HooksClientOptions } from './client/hooks-client';
 export type { MCPClientOptions } from './client/mcp-client';
 export type {
@@ -496,7 +501,7 @@ import { RemoteState } from './conversation/remote-state';
 import { RemoteEventsList } from './events/remote-events-list';
 import { WebSocketCallbackClient } from './events/websocket-client';
 import { BashWebSocketClient } from './events/bash-websocket-client';
-import { HttpClient, HttpError } from './client/http-client';
+import { HttpClient, HttpError, isHttpError } from './client/http-client';
 import { HooksClient } from './client/hooks-client';
 import { MCPClient } from './client/mcp-client';
 import { WorkspacesClient } from './client/workspaces-client';
@@ -551,6 +556,7 @@ export default {
   BashWebSocketClient,
   HttpClient,
   HttpError,
+  isHttpError,
   HooksClient,
   MCPClient,
   WorkspacesClient,
